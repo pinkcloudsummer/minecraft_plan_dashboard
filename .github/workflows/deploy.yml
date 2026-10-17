@@ -17,17 +17,17 @@ jobs:
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
-      - name: Copy JS & Python Files to Server
+      - name: Sync Files to Server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-          source: "web/js/*,scripts/*"
+          source: "web/*,scripts/*,nginx/*"
           target: "/opt/stacks/minecraft/data/plugins/Plan/"
 
-      - name: Run Database Injection & Export Web Pages
+      - name: Run Database Aggregation Script
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -35,4 +35,3 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             python3 /opt/stacks/minecraft/data/plugins/Plan/scripts/update_server_stats.py
-            python3 /opt/stacks/minecraft/data/plugins/Plan/scripts/server_stats.py

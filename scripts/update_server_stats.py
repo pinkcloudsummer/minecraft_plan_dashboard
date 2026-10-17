@@ -41,3 +41,20 @@ print(f"Successfully updated {updated} server-level metrics in database.db.")
 # 3. Export updated web views via RCON
 subprocess.run(["docker", "exec", "-i", "minecraft-server", "rcon-cli", "plan", "export"], stdout=subprocess.DEVNULL)
 print("Plan web export completed.")
+
+# 4. Ensure index.html includes custom_overview.js (after export, which may regenerate web files)
+index_path = "/opt/stacks/minecraft/data/plugins/Plan/web/index.html"
+try:
+    with open(index_path, "r") as f:
+        content = f.read()
+    if "custom_overview.js" in content:
+        print("custom_overview.js already present in index.html.")
+    elif "</body>" not in content:
+        print("Index injection skipped: no </body> tag found in index.html")
+    else:
+        content = content.replace("</body>", '<script src="js/custom_overview.js"></script></body>', 1)
+        with open(index_path, "w") as f:
+            f.write(content)
+        print("Injected custom_overview.js into index.html")
+except Exception as e:
+    print(f"Index injection skipped: {e}")
