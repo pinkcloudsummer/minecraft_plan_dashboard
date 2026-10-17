@@ -9,10 +9,15 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Sync Files to Server via SCP
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      - name: Copy JS & Python Files to Server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -22,7 +27,7 @@ jobs:
           source: "web/js/*,scripts/*"
           target: "/opt/stacks/minecraft/data/plugins/Plan/"
 
-      - name: Run Backend Aggregation & Trigger Export
+      - name: Run Database Injection & Export Web Pages
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
