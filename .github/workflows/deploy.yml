@@ -30,3 +30,4 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             python3 /opt/stacks/minecraft/data/plugins/Plan/scripts/update_server_stats.py
+            python3 /opt/stacks/minecraft/data/plugins/Plan/scripts/server_stats.py
