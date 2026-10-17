@@ -1,4 +1,4 @@
-cat << 'EOF' > /opt/stacks/minecraft/data/plugins/Plan/web/js/custom_overview.js
+
 (function () {
   console.log("[Plan Custom Overview] Script initialized.");
 
@@ -26,4 +26,3 @@ cat << 'EOF' > /opt/stacks/minecraft/data/plugins/Plan/web/js/custom_overview.js
   const observer = new MutationObserver(injectCard);
   observer.observe(document.body, { childList: true, subtree: true });
 })();
-EOF
