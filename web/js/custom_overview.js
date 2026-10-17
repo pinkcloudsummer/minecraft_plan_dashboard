@@ -1,32 +1,42 @@
 (function () {
     'use strict';
 
-    // Poll DOM every 1 second to handle SPA page routing
+    console.log('[Plan Custom Overview] Script initialized.');
+
+    // Keep polling (not just until first mount) so the card is re-injected after SPA page routing
     setInterval(function () {
-        // Target Plan's main content area or container
-        const container = document.querySelector('.main-content, #main-content, #content, .container-fluid');
+        // Query selectors matching Plan server and player page wrappers
+        const container = document.querySelector('#page-wrapper') ||
+                          document.querySelector('.content') ||
+                          document.querySelector('#main-content') ||
+                          document.querySelector('.main-panel');
 
         if (!container) return;
         if (document.getElementById('custom-papi-overview-card')) return;
 
         renderOverviewCard(container);
-    }, 1000);
+    }, 200);
 
     function renderOverviewCard(container) {
+        console.log('[Plan Custom Overview] Container found. Injecting custom card...');
+
         const card = document.createElement('div');
         card.id = 'custom-papi-overview-card';
-        card.style.cssText = 'background: #2b2b2b; color: #fff; border-radius: 8px; padding: 15px; margin: 15px 0; border: 1px solid #444;';
+        card.className = 'row';
+        card.style.margin = '15px 0';
 
         card.innerHTML = `
-            <div style="font-weight: bold; font-size: 1.1em; border-bottom: 1px solid #444; padding-bottom: 8px; margin-bottom: 10px;">
-                ⛏️ Key Resource Totals (Server Overview)
-            </div>
-            <div id="custom-papi-stats-list">
-                <div style="color: #aaa;">Loading aggregated metrics...</div>
+            <div class="col-lg-12">
+                <div class="card" style="background: #1e1e2d; color: #fff; padding: 20px; border-radius: 8px; border: 1px solid #2b2b40;">
+                    <h3 style="margin-top: 0;">⛏️ Key Resource Totals</h3>
+                    <div id="custom-papi-stats-list">
+                        <div style="color: #aaa;">Loading aggregated metrics...</div>
+                    </div>
+                </div>
             </div>
         `;
 
-        container.insertBefore(card, container.firstChild);
+        container.prepend(card);
         populateStats();
     }
 
