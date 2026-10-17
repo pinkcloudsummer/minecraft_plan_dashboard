@@ -27,6 +27,7 @@ jobs:
           source: "web/*,scripts/*,nginx/*"
           target: "/opt/stacks/minecraft/data/plugins/Plan/"
 
+          
       - name: Run Database Aggregation Script
         uses: appleboy/ssh-action@v1.0.3
         with:
