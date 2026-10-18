@@ -10,6 +10,7 @@
     { name: "statistic_mine_block:iron_ore", label: "⚙️ Iron Ore" },
     { name: "statistic_mine_block:copper_ore", label: "🟧 Copper Ore" },
     { name: "statistic_mine_block:diamond_ore", label: "💎 Diamond Ore" },
+    { name: "javascript_pickaxe_total", label: "⛏️ Pickaxe Blocks" },
   ];
 
   // Only these pages get a card: server overview, plugins overview, player overview

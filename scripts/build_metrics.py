@@ -15,6 +15,7 @@ RESOURCES = [
     ("statistic_mine_block:iron_ore", "Iron Ore"),
     ("statistic_mine_block:copper_ore", "Copper Ore"),
     ("statistic_mine_block:diamond_ore", "Diamond Ore"),
+    ("javascript_pickaxe_total", "Pickaxe Blocks"),
 ]
 
 HOUR_MS = 3_600_000

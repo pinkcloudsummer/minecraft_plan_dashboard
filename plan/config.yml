@@ -311,6 +311,7 @@ Plugins:
           - "%statistic_mine_block:diamond_ore%"
           - "%statistic_mine_block:nether_quartz_ore%"
           - "%statistic_mine_block:lapis_ore%"
+          - "%javascript_pickaxe_total%"
           - "%example_placeholder%"
         Skip_storing_invalid_placeholder_values:
           - "Missing player info"
