@@ -1,9 +1,13 @@
+import json
 import os
+import re
 import sqlite3
 import time
 
 PLAN_DB = os.environ.get("PLAN_DB", "/opt/stacks/minecraft/data/plugins/Plan/database.db")
 SNAPSHOT_DB = os.environ.get("SNAPSHOT_DB", "/opt/stacks/minecraft/data/plugins/Plan/metric_snapshots.db")
+PLAN_CONFIG = os.environ.get("PLAN_CONFIG", "/opt/stacks/minecraft/data/plugins/Plan/config.yml")
+SERVER_DIR = os.environ.get("SERVER_DIR", "/opt/stacks/minecraft/data")
 
 # Kept in a separate file so Plan's own schema/patches never touch it.
 # Only changes are stored: a player's value at time T is the latest row with ts <= T.
@@ -53,6 +57,7 @@ def read_plan_data():
             JOIN plan_servers sv ON sv.id = s.server_id
             """
         ).fetchall()
+        known_uuids = {row[0] for row in plan.execute("SELECT uuid FROM plan_users")}
     finally:
         plan.close()
 
@@ -62,12 +67,59 @@ def read_plan_data():
             values[(uuid, metric)] = float(raw)
         except ValueError:
             continue
-    return values, sessions
+    return values, sessions, known_uuids
+
+
+def tracked_block_stats():
+    # Block stats tracked in Plan's config, e.g. %statistic_mine_block:stone%
+    try:
+        with open(PLAN_CONFIG) as f:
+            text = f.read()
+    except OSError:
+        return []
+    return re.findall(r'^\s*-\s*"%statistic_mine_block:([a-z0-9_]+)%"', text, re.MULTILINE)
+
+
+def stats_dir():
+    level = "world"
+    try:
+        with open(os.path.join(SERVER_DIR, "server.properties")) as f:
+            for line in f:
+                if line.startswith("level-name="):
+                    level = line.split("=", 1)[1].strip() or level
+    except OSError:
+        pass
+    for sub in ("players/stats", "stats"):
+        path = os.path.join(SERVER_DIR, level, sub)
+        if os.path.isdir(path):
+            return path
+    return None
+
+
+def read_minecraft_block_stats(known_uuids):
+    # Minecraft keeps lifetime counts for every player, online or not
+    directory = stats_dir()
+    blocks = tracked_block_stats()
+    values = {}
+    if not directory or not blocks:
+        return values
+    for filename in os.listdir(directory):
+        uuid = filename[:-5]
+        if not filename.endswith(".json") or uuid not in known_uuids:
+            continue
+        try:
+            with open(os.path.join(directory, filename)) as f:
+                mined = json.load(f).get("stats", {}).get("minecraft:mined", {})
+        except (OSError, ValueError):
+            continue
+        for block in blocks:
+            values[(uuid, f"statistic_mine_block:{block}")] = float(mined.get(f"minecraft:{block}", 0))
+    return values
 
 
 def main():
     now = int(time.time() * 1000)
-    current, sessions = read_plan_data()
+    current, sessions, known_uuids = read_plan_data()
 
     snap = sqlite3.connect(SNAPSHOT_DB, timeout=30)
     snap.executescript(SCHEMA)
@@ -91,7 +143,14 @@ def main():
         for (uuid, metric), value in current.items()
         if latest.get((uuid, metric)) != value
     ]
-    snap.executemany("INSERT INTO metric_changes (ts, uuid, metric, value) VALUES (?, ?, ?, ?)", changed)
+    # Fill-only: Minecraft's file values only seed series Plan hasn't recorded yet, so the two
+    # sources can never alternate. Once Plan stores a stat, Plan's value takes over.
+    seeded = [
+        (now, uuid, metric, value)
+        for (uuid, metric), value in read_minecraft_block_stats(known_uuids).items()
+        if (uuid, metric) not in current and (uuid, metric) not in latest
+    ]
+    snap.executemany("INSERT INTO metric_changes (ts, uuid, metric, value) VALUES (?, ?, ?, ?)", changed + seeded)
     # INSERT OR IGNORE keeps archived sessions even after Plan deletes them
     before = snap.total_changes
     snap.executemany(
@@ -104,7 +163,10 @@ def main():
     snap.commit()
     snap.close()
 
-    print(f"Snapshot at {now}: {len(current)} values read, {len(changed)} changed, {archived} new sessions archived.")
+    print(
+        f"Snapshot at {now}: {len(current)} values read, {len(changed)} changed, "
+        f"{len(seeded)} seeded from Minecraft stats, {archived} new sessions archived."
+    )
 
 
 if __name__ == "__main__":
