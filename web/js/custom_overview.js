@@ -47,9 +47,66 @@
   }
 
   function renderRows(card, totals) {
-    const body = card.querySelector(".card-body");
+    const body = card.querySelector(".totals-body");
     body.innerHTML = RESOURCES.map((r) => `
       <p>${r.label}<span class="float-end">${(totals[r.name] || 0).toLocaleString()}</span></p>`).join("");
+  }
+
+  // Precomputed server-side by scripts/build_metrics.py from the snapshot database
+  async function loadActivity() {
+    const res = await fetch("/custom_assets/metrics.json?t=" + Date.now());
+    if (!res.ok) throw new Error("metrics.json returned " + res.status);
+    return res.json();
+  }
+
+  function escapeHtml(text) {
+    const el = document.createElement("div");
+    el.textContent = text;
+    return el.innerHTML;
+  }
+
+  function fmt(value) {
+    return value === null || value === undefined ? "–" : Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 });
+  }
+
+  function labelFor(resource) {
+    const known = RESOURCES.find((r) => r.name === resource.name);
+    // Keep the emoji from RESOURCES but use the short name so table rows don't wrap
+    return known ? `${known.label.split(" ")[0]} ${resource.label}` : resource.label;
+  }
+
+  function renderActivity(card, route, metrics) {
+    const body = card.querySelector(".activity-body");
+    const isPlayer = route.type === "player";
+    const source = isPlayer ? metrics.players[route.id] : metrics.server;
+    if (!source) {
+      body.textContent = "No activity recorded for this player yet.";
+      return;
+    }
+
+    const columns = [["gain_24h", "24h"], ["gain_7d", "7d"], ["per_hour", "/hr"]];
+    if (isPlayer) columns.push(["avg_per_session", "/session"]);
+
+    const header = columns.map(([, title]) => `<th class="text-end">${title}</th>`).join("");
+    const rows = metrics.resources.map((r) => {
+      const cells = columns.map(([key]) => `<td class="text-end">${fmt(source[key] && source[key][r.name])}</td>`).join("");
+      return `<tr><td>${labelFor(r)}</td>${cells}</tr>`;
+    }).join("");
+
+    let html = `<table class="table table-sm mb-3"><thead><tr><th></th>${header}</tr></thead><tbody>${rows}</tbody></table>`;
+
+    if (!isPlayer) {
+      html += "<p><strong>Top by total</strong></p>" + metrics.resources.map((r) => {
+        const top = metrics.leaderboards[r.name] && metrics.leaderboards[r.name].total[0];
+        return top
+          ? `<p>${labelFor(r)}<span class="float-end">${escapeHtml(top.name)} · ${fmt(top.value)}</span></p>`
+          : "";
+      }).join("");
+    }
+
+    const since = new Date(metrics.tracking_since).toLocaleDateString();
+    html += `<small class="text-muted">Gains count from ${since} (when tracking began). /hr uses lifetime totals over active playtime.</small>`;
+    body.innerHTML = html;
   }
 
   function mountCard(route) {
@@ -73,7 +130,13 @@
       <div class="col-lg-6 col-md-6">
         <div class="card">
           <div class="card-header"><h6>⛏️ ${route.type === "player" ? "Player" : "Key"} Resource Totals</h6></div>
-          <div class="card-body">Loading metrics...</div>
+          <div class="card-body totals-body">Loading metrics...</div>
+        </div>
+      </div>
+      <div class="col-lg-6 col-md-6">
+        <div class="card">
+          <div class="card-header"><h6>📈 Resource Activity</h6></div>
+          <div class="card-body activity-body">Loading metrics...</div>
         </div>
       </div>
     `;
@@ -86,8 +149,18 @@
       })
       .catch((err) => {
         console.error("[Plan Custom Overview] Failed to load totals:", err);
-        const body = card.querySelector(".card-body");
+        const body = card.querySelector(".totals-body");
         if (body) body.textContent = "Metrics unavailable.";
+      });
+
+    loadActivity()
+      .then((metrics) => {
+        if (card.isConnected) renderActivity(card, route, metrics);
+      })
+      .catch((err) => {
+        console.error("[Plan Custom Overview] Failed to load activity metrics:", err);
+        const body = card.querySelector(".activity-body");
+        if (body) body.textContent = "Activity metrics not available yet.";
       });
   }
 

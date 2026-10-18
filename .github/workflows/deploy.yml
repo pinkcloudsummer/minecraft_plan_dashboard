@@ -58,3 +58,4 @@ jobs:
           script: |
             python3 /opt/stacks/minecraft/data/plugins/Plan/scripts/update_server_stats.py
             python3 /opt/stacks/minecraft/data/plugins/Plan/scripts/snapshot_metrics.py
+            python3 /opt/stacks/minecraft/data/plugins/Plan/scripts/build_metrics.py
