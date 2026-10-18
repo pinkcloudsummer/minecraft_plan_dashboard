@@ -24,7 +24,9 @@ METRICS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "metrics"
 def load_derived():
     # One file per custom metric in scripts/metrics/. A broken file is skipped so it can't
     # stop the other metrics from updating.
-    derived = []
+    # A "sum" metric combines SOURCES; a "ratio" metric (KIND = "ratio") is NUMERATOR / DENOMINATOR,
+    # where each side is the sum of its listed sources.
+    derived, visible, ratios = [], [], {}
     for filename in sorted(os.listdir(METRICS_DIR)) if os.path.isdir(METRICS_DIR) else []:
         if not filename.endswith(".py") or filename.startswith("_"):
             continue
@@ -33,20 +35,36 @@ def load_derived():
             spec = importlib.util.spec_from_file_location(f"metric_{filename[:-3]}", path)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            derived.append({
-                "name": module.NAME,
-                "label": module.LABEL,
-                "sources": list(module.SOURCES),
-                "combine": getattr(module, "combine", sum),
-            })
+            name, label = module.NAME, module.LABEL
+            if getattr(module, "KIND", "sum") == "ratio":
+                parts = [
+                    {"name": f"{name}__num", "sources": list(dict.fromkeys(module.NUMERATOR)), "combine": sum},
+                    {"name": f"{name}__den", "sources": list(dict.fromkeys(module.DENOMINATOR)), "combine": sum},
+                ]
+                entry_ratios = {name: {"num": parts[0]["name"], "den": parts[1]["name"]}}
+                kind = "ratio"
+            else:
+                # dict.fromkeys drops accidental duplicates so a source is never counted twice
+                parts = [{
+                    "name": name,
+                    "sources": list(dict.fromkeys(module.SOURCES)),
+                    "combine": getattr(module, "combine", sum),
+                }]
+                entry_ratios = {}
+                kind = "sum"
         except Exception as err:
             print(f"Skipping metric {filename}: {err}")
-    return derived
+            continue
+        derived.extend(parts)
+        ratios.update(entry_ratios)
+        visible.append({"name": name, "label": label, "kind": kind})
+    return derived, visible, ratios
 
 
-DERIVED = load_derived()
+DERIVED, VISIBLE_DERIVED, RATIOS = load_derived()
 
-METRICS = RESOURCES + [(d["name"], d["label"]) for d in DERIVED]
+METRICS = RESOURCES + [(d["name"], d["label"]) for d in VISIBLE_DERIVED]
+KINDS = {d["name"]: d["kind"] for d in VISIBLE_DERIVED}
 
 HOUR_MS = 3_600_000
 WINDOWS = {"gain_24h": 24 * HOUR_MS, "gain_7d": 7 * 24 * HOUR_MS}
@@ -120,6 +138,21 @@ def round_or_none(value, digits=2):
     return None if value is None else round(value, digits)
 
 
+def safe_div(numerator, denominator):
+    return None if not denominator else numerator / denominator
+
+
+def ratio_parts(series, uuid, spec, now):
+    # (numerator, denominator) for the lifetime total and for each gain window
+    num, den = series.get((uuid, spec["num"])), series.get((uuid, spec["den"]))
+    if not num or not den:
+        return None
+    parts = {"total": (num[-1][1], den[-1][1])}
+    for key, window in WINDOWS.items():
+        parts[key] = (window_gain(num, now, window), window_gain(den, now, window))
+    return parts
+
+
 def main():
     now = int(time.time() * 1000)
     names = load_names()
@@ -139,6 +172,7 @@ def main():
 
     uuids = sorted({uuid for uuid, _ in series})
     players = {}
+    parts_by_player = {}
     for uuid in uuids:
         sessions = sessions_by_player.get(uuid, [])
         # Sessions that began before tracking have no baseline value, so they are skipped per resource
@@ -156,6 +190,17 @@ def main():
             "sessions_counted": {},
         }
         for metric, _ in METRICS:
+            if metric in RATIOS:
+                parts = ratio_parts(series, uuid, RATIOS[metric], now)
+                if not parts:
+                    continue
+                parts_by_player.setdefault(uuid, {})[metric] = parts
+                for key, (num, den) in parts.items():
+                    entry[key][metric] = round_or_none(safe_div(num, den), 3)
+                entry["per_hour"][metric] = None
+                entry["avg_per_session"][metric] = None
+                entry["sessions_counted"][metric] = 0
+                continue
             points = series.get((uuid, metric))
             if not points:
                 continue
@@ -170,22 +215,28 @@ def main():
         players[uuid] = entry
 
     total_hours = sum(p["active_hours"] for p in players.values())
-    server = {"active_hours": round(total_hours, 2)}
-    for key in ("total", "gain_24h", "gain_7d"):
-        server[key] = {
-            metric: sum(p[key].get(metric, 0) for p in players.values()) for metric, _ in METRICS
-        }
-    server["per_hour"] = {
-        metric: round_or_none(server["total"][metric] / total_hours) if total_hours > 0 else None
-        for metric, _ in METRICS
-    }
+    server = {"active_hours": round(total_hours, 2), "total": {}, "gain_24h": {}, "gain_7d": {}, "per_hour": {}}
+    for metric, _ in METRICS:
+        if metric in RATIOS:
+            # A server ratio is total numerator over total denominator, not an average of player ratios
+            for key in ("total", "gain_24h", "gain_7d"):
+                nums = [parts[metric][key][0] for parts in parts_by_player.values() if metric in parts]
+                dens = [parts[metric][key][1] for parts in parts_by_player.values() if metric in parts]
+                server[key][metric] = round_or_none(safe_div(sum(nums), sum(dens)), 3)
+            server["per_hour"][metric] = None
+            continue
+        for key in ("total", "gain_24h", "gain_7d"):
+            server[key][metric] = sum(p[key].get(metric, 0) for p in players.values())
+        server["per_hour"][metric] = (
+            round_or_none(server["total"][metric] / total_hours) if total_hours > 0 else None
+        )
 
     leaderboards = {}
     for metric, _ in METRICS:
         leaderboards[metric] = {}
         for key in ("total", "gain_7d"):
             ranked = sorted(
-                ((uuid, p[key][metric]) for uuid, p in players.items() if p[key].get(metric, 0) > 0),
+                ((uuid, p[key][metric]) for uuid, p in players.items() if (p[key].get(metric) or 0) > 0),
                 key=lambda item: item[1],
                 reverse=True,
             )[:LEADERBOARD_SIZE]
@@ -196,7 +247,9 @@ def main():
     payload = {
         "generated_at": now,
         "tracking_since": tracking_since,
-        "resources": [{"name": name, "label": label} for name, label in METRICS],
+        "resources": [
+            {"name": name, "label": label, "kind": KINDS.get(name, "sum")} for name, label in METRICS
+        ],
         "server": server,
         "players": players,
         "leaderboards": leaderboards,

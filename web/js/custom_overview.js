@@ -65,8 +65,10 @@
     return el.innerHTML;
   }
 
-  function fmt(value) {
-    return value === null || value === undefined ? "–" : Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 });
+  // Ratios need more precision than counts (1.37 vs 1.4)
+  function fmt(value, kind) {
+    if (value === null || value === undefined) return "–";
+    return Number(value).toLocaleString(undefined, { maximumFractionDigits: kind === "ratio" ? 2 : 1 });
   }
 
   function labelFor(resource) {
@@ -89,7 +91,7 @@
 
     const header = columns.map(([, title]) => `<th class="text-end">${title}</th>`).join("");
     const rows = metrics.resources.map((r) => {
-      const cells = columns.map(([key]) => `<td class="text-end">${fmt(source[key] && source[key][r.name])}</td>`).join("");
+      const cells = columns.map(([key]) => `<td class="text-end">${fmt(source[key] && source[key][r.name], r.kind)}</td>`).join("");
       return `<tr><td>${labelFor(r)}</td>${cells}</tr>`;
     }).join("");
 
@@ -104,7 +106,7 @@
     const rows = metrics.resources.map((r) => {
       const top = (metrics.leaderboards[r.name] && metrics.leaderboards[r.name][key]) || [];
       const cells = [0, 1, 2].map((i) => top[i]
-        ? `<td>${escapeHtml(top[i].name)} <span class="text-muted">${fmt(top[i].value)}</span></td>`
+        ? `<td>${escapeHtml(top[i].name)} <span class="text-muted">${fmt(top[i].value, r.kind)}</span></td>`
         : "<td>–</td>").join("");
       return `<tr><td>${labelFor(r)}</td>${cells}</tr>`;
     }).join("");
