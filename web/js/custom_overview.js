@@ -95,18 +95,37 @@
 
     let html = `<table class="table table-sm mb-3"><thead><tr><th></th>${header}</tr></thead><tbody>${rows}</tbody></table>`;
 
-    if (!isPlayer) {
-      html += "<p><strong>Top by total</strong></p>" + metrics.resources.map((r) => {
-        const top = metrics.leaderboards[r.name] && metrics.leaderboards[r.name].total[0];
-        return top
-          ? `<p>${labelFor(r)}<span class="float-end">${escapeHtml(top.name)} · ${fmt(top.value)}</span></p>`
-          : "";
-      }).join("");
-    }
-
     const since = new Date(metrics.tracking_since).toLocaleDateString();
     html += `<small class="text-muted">Gains count from ${since} (when tracking began). /hr uses lifetime totals over active playtime.</small>`;
     body.innerHTML = html;
+  }
+
+  function leaderboardTable(metrics, key) {
+    const rows = metrics.resources.map((r) => {
+      const top = (metrics.leaderboards[r.name] && metrics.leaderboards[r.name][key]) || [];
+      const cells = [0, 1, 2].map((i) => top[i]
+        ? `<td>${escapeHtml(top[i].name)} <span class="text-muted">${fmt(top[i].value)}</span></td>`
+        : "<td>–</td>").join("");
+      return `<tr><td>${labelFor(r)}</td>${cells}</tr>`;
+    }).join("");
+    return `<table class="table table-sm mb-3"><thead><tr><th></th><th>1st</th><th>2nd</th><th>3rd</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function renderLeaderboards(card, metrics) {
+    const body = card.querySelector(".leaderboard-body");
+    body.innerHTML = `
+      <p><strong>All time</strong></p>${leaderboardTable(metrics, "total")}
+      <p><strong>Last 7 days</strong></p>${leaderboardTable(metrics, "gain_7d")}`;
+  }
+
+  // Plan's own cards for these extensions are replaced by the custom cards below
+  const HIDDEN_EXTENSIONS = ["PlaceholderAPI"];
+
+  function hideNativeExtensions() {
+    document.querySelectorAll("main .extension-wrapper").forEach((wrapper) => {
+      const title = wrapper.querySelector(".card-header h6");
+      if (title && HIDDEN_EXTENSIONS.includes(title.textContent.trim())) wrapper.style.display = "none";
+    });
   }
 
   function mountCard(route) {
@@ -126,6 +145,7 @@
     card.id = CARD_ID;
     card.className = "row";
     card.dataset.route = route.key;
+    const isServer = route.type === "server";
     card.innerHTML = `
       <div class="col-lg-6 col-md-6">
         <div class="card">
@@ -139,6 +159,13 @@
           <div class="card-body activity-body">Loading metrics...</div>
         </div>
       </div>
+      ${isServer ? `
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header"><h6>🏆 Leaderboards</h6></div>
+          <div class="card-body leaderboard-body">Loading metrics...</div>
+        </div>
+      </div>` : ""}
     `;
     main.appendChild(card);
 
@@ -155,16 +182,20 @@
 
     loadActivity()
       .then((metrics) => {
-        if (card.isConnected) renderActivity(card, route, metrics);
+        if (!card.isConnected) return;
+        renderActivity(card, route, metrics);
+        if (isServer) renderLeaderboards(card, metrics);
       })
       .catch((err) => {
         console.error("[Plan Custom Overview] Failed to load activity metrics:", err);
-        const body = card.querySelector(".activity-body");
-        if (body) body.textContent = "Activity metrics not available yet.";
+        card.querySelectorAll(".activity-body, .leaderboard-body").forEach((body) => {
+          body.textContent = "Activity metrics not available yet.";
+        });
       });
   }
 
   function sync() {
+    hideNativeExtensions();
     const route = getRoute();
     if (!route) {
       const stale = document.getElementById(CARD_ID);
