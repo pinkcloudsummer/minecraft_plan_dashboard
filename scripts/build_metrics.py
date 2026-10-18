@@ -1,4 +1,5 @@
 import bisect
+import importlib.util
 import json
 import os
 import sqlite3
@@ -15,8 +16,37 @@ RESOURCES = [
     ("statistic_mine_block:iron_ore", "Iron Ore"),
     ("statistic_mine_block:copper_ore", "Copper Ore"),
     ("statistic_mine_block:diamond_ore", "Diamond Ore"),
-    ("javascript_pickaxe_total", "Pickaxe Blocks"),
 ]
+
+METRICS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "metrics")
+
+
+def load_derived():
+    # One file per custom metric in scripts/metrics/. A broken file is skipped so it can't
+    # stop the other metrics from updating.
+    derived = []
+    for filename in sorted(os.listdir(METRICS_DIR)) if os.path.isdir(METRICS_DIR) else []:
+        if not filename.endswith(".py") or filename.startswith("_"):
+            continue
+        path = os.path.join(METRICS_DIR, filename)
+        try:
+            spec = importlib.util.spec_from_file_location(f"metric_{filename[:-3]}", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            derived.append({
+                "name": module.NAME,
+                "label": module.LABEL,
+                "sources": list(module.SOURCES),
+                "combine": getattr(module, "combine", sum),
+            })
+        except Exception as err:
+            print(f"Skipping metric {filename}: {err}")
+    return derived
+
+
+DERIVED = load_derived()
+
+METRICS = RESOURCES + [(d["name"], d["label"]) for d in DERIVED]
 
 HOUR_MS = 3_600_000
 WINDOWS = {"gain_24h": 24 * HOUR_MS, "gain_7d": 7 * 24 * HOUR_MS}
@@ -62,6 +92,22 @@ def session_gains(points, sessions):
     return gains
 
 
+def derive_sums(series):
+    # A derived value only exists from the moment every source stat has been recorded for the
+    # player, otherwise tracking a new stat would show up as a fake jump in gains
+    players = {uuid for uuid, _ in series}
+    for derived in DERIVED:
+        for uuid in players:
+            sources = [series.get((uuid, metric)) for metric in derived["sources"]]
+            if not all(sources):
+                continue
+            start = max(points[0][0] for points in sources)
+            timestamps = sorted({ts for points in sources for ts, _ in points if ts >= start} | {start})
+            series[(uuid, derived["name"])] = [
+                (ts, derived["combine"]([value_at(points, ts) for points in sources])) for ts in timestamps
+            ]
+
+
 def load_names():
     plan = sqlite3.connect(f"file:{PLAN_DB}?mode=ro", uri=True, timeout=30)
     try:
@@ -80,6 +126,7 @@ def main():
 
     snap = sqlite3.connect(f"file:{SNAPSHOT_DB}?mode=ro", uri=True, timeout=30)
     series = load_series(snap)
+    derive_sums(series)
     tracking_since = snap.execute("SELECT MIN(ts) FROM snapshot_runs").fetchone()[0]
 
     sessions_by_player = {}
@@ -108,7 +155,7 @@ def main():
             "avg_per_session": {},
             "sessions_counted": {},
         }
-        for metric, _ in RESOURCES:
+        for metric, _ in METRICS:
             points = series.get((uuid, metric))
             if not points:
                 continue
@@ -126,15 +173,15 @@ def main():
     server = {"active_hours": round(total_hours, 2)}
     for key in ("total", "gain_24h", "gain_7d"):
         server[key] = {
-            metric: sum(p[key].get(metric, 0) for p in players.values()) for metric, _ in RESOURCES
+            metric: sum(p[key].get(metric, 0) for p in players.values()) for metric, _ in METRICS
         }
     server["per_hour"] = {
         metric: round_or_none(server["total"][metric] / total_hours) if total_hours > 0 else None
-        for metric, _ in RESOURCES
+        for metric, _ in METRICS
     }
 
     leaderboards = {}
-    for metric, _ in RESOURCES:
+    for metric, _ in METRICS:
         leaderboards[metric] = {}
         for key in ("total", "gain_7d"):
             ranked = sorted(
@@ -149,7 +196,7 @@ def main():
     payload = {
         "generated_at": now,
         "tracking_since": tracking_since,
-        "resources": [{"name": name, "label": label} for name, label in RESOURCES],
+        "resources": [{"name": name, "label": label} for name, label in METRICS],
         "server": server,
         "players": players,
         "leaderboards": leaderboards,
@@ -161,7 +208,7 @@ def main():
         json.dump(payload, f, separators=(",", ":"))
     os.chmod(tmp, 0o644)
     os.replace(tmp, OUTPUT)
-    print(f"Wrote {OUTPUT}: {len(players)} players, {len(RESOURCES)} resources.")
+    print(f"Wrote {OUTPUT}: {len(players)} players, {len(METRICS)} metrics.")
 
 
 if __name__ == "__main__":

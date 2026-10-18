@@ -10,7 +10,6 @@
     { name: "statistic_mine_block:iron_ore", label: "⚙️ Iron Ore" },
     { name: "statistic_mine_block:copper_ore", label: "🟧 Copper Ore" },
     { name: "statistic_mine_block:diamond_ore", label: "💎 Diamond Ore" },
-    { name: "javascript_pickaxe_total", label: "⛏️ Pickaxe Blocks" },
   ];
 
   // Only these pages get a card: server overview, plugins overview, player overview
@@ -85,7 +84,7 @@
       return;
     }
 
-    const columns = [["gain_24h", "24h"], ["gain_7d", "7d"], ["per_hour", "/hr"]];
+    const columns = [["total", "Total"], ["gain_24h", "24h"], ["gain_7d", "7d"], ["per_hour", "/hr"]];
     if (isPlayer) columns.push(["avg_per_session", "/session"]);
 
     const header = columns.map(([, title]) => `<th class="text-end">${title}</th>`).join("");

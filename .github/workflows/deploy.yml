@@ -39,27 +39,6 @@ jobs:
           strip_components: 1
           overwrite: true
 
-      - name: Sync PlaceholderAPI scripts
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          source: "papi/javascripts/*,papi/javascript_placeholders.yml"
-          target: "/opt/stacks/minecraft/data/plugins/PlaceholderAPI/"
-          strip_components: 1
-          overwrite: true
-
-      - name: Reload PlaceholderAPI scripts
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            docker exec -i minecraft-server rcon-cli jsexpansion reload
-
       - name: Reload Plan
         uses: appleboy/ssh-action@v1.0.3
         with:
