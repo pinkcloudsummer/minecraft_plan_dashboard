@@ -20,10 +20,20 @@ CREATE TABLE IF NOT EXISTS metric_changes (
     PRIMARY KEY (uuid, metric, ts)
 );
 CREATE INDEX IF NOT EXISTS idx_metric_changes_ts ON metric_changes (ts);
+CREATE TABLE IF NOT EXISTS sessions_archive (
+    uuid TEXT NOT NULL,
+    server_uuid TEXT NOT NULL,
+    session_start INTEGER NOT NULL,
+    session_end INTEGER NOT NULL,
+    afk_time INTEGER,
+    deaths INTEGER,
+    mob_kills INTEGER,
+    PRIMARY KEY (uuid, server_uuid, session_start)
+);
 """
 
 
-def read_current_values():
+def read_plan_data():
     # Read-only so a snapshot can never interfere with Plan's own writes
     plan = sqlite3.connect(f"file:{PLAN_DB}?mode=ro", uri=True, timeout=30)
     try:
@@ -35,6 +45,14 @@ def read_current_values():
             WHERE v.string_value IS NOT NULL
             """
         ).fetchall()
+        sessions = plan.execute(
+            """
+            SELECT u.uuid, sv.uuid, s.session_start, s.session_end, s.afk_time, s.deaths, s.mob_kills
+            FROM plan_sessions s
+            JOIN plan_users u ON u.id = s.user_id
+            JOIN plan_servers sv ON sv.id = s.server_id
+            """
+        ).fetchall()
     finally:
         plan.close()
 
@@ -44,12 +62,12 @@ def read_current_values():
             values[(uuid, metric)] = float(raw)
         except ValueError:
             continue
-    return values
+    return values, sessions
 
 
 def main():
     now = int(time.time() * 1000)
-    current = read_current_values()
+    current, sessions = read_plan_data()
 
     snap = sqlite3.connect(SNAPSHOT_DB, timeout=30)
     snap.executescript(SCHEMA)
@@ -74,11 +92,19 @@ def main():
         if latest.get((uuid, metric)) != value
     ]
     snap.executemany("INSERT INTO metric_changes (ts, uuid, metric, value) VALUES (?, ?, ?, ?)", changed)
+    # INSERT OR IGNORE keeps archived sessions even after Plan deletes them
+    before = snap.total_changes
+    snap.executemany(
+        "INSERT OR IGNORE INTO sessions_archive "
+        "(uuid, server_uuid, session_start, session_end, afk_time, deaths, mob_kills) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        sessions,
+    )
+    archived = snap.total_changes - before
     snap.execute("INSERT OR IGNORE INTO snapshot_runs (ts) VALUES (?)", (now,))
     snap.commit()
     snap.close()
 
-    print(f"Snapshot at {now}: {len(current)} values read, {len(changed)} changed.")
+    print(f"Snapshot at {now}: {len(current)} values read, {len(changed)} changed, {archived} new sessions archived.")
 
 
 if __name__ == "__main__":
