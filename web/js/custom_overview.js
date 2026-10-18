@@ -47,12 +47,9 @@
   }
 
   function renderRows(card, totals) {
-    const body = card.querySelector(".custom-overview-body");
+    const body = card.querySelector(".card-body");
     body.innerHTML = RESOURCES.map((r) => `
-      <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-        <span>${r.label}</span>
-        <strong>${(totals[r.name] || 0).toLocaleString()}</strong>
-      </div>`).join("");
+      <p>${r.label}<span class="float-end">${(totals[r.name] || 0).toLocaleString()}</span></p>`).join("");
   }
 
   function mountCard(route) {
@@ -67,13 +64,18 @@
     }
     if (existing) existing.remove();
 
+    // Reuse Plan's own card markup (row > col > card) so theme, dark mode and spacing are inherited
     const card = document.createElement("div");
     card.id = CARD_ID;
+    card.className = "row";
     card.dataset.route = route.key;
-    card.style.cssText = "margin: 25px 0; padding: 20px; background: #1e1e2d; color: #ffffff; border-radius: 8px; border: 1px solid #32324e; font-family: sans-serif; clear: both;";
     card.innerHTML = `
-      <h3 style="margin-top:0; color: #50fa7b; font-weight: 600;">⛏️ ${route.type === "player" ? "Player" : "Key"} Resource Totals</h3>
-      <div class="custom-overview-body" style="color: #a6accd;">Loading metrics...</div>
+      <div class="col-lg-6 col-md-6">
+        <div class="card">
+          <div class="card-header"><h6>⛏️ ${route.type === "player" ? "Player" : "Key"} Resource Totals</h6></div>
+          <div class="card-body">Loading metrics...</div>
+        </div>
+      </div>
     `;
     main.appendChild(card);
 
@@ -84,7 +86,7 @@
       })
       .catch((err) => {
         console.error("[Plan Custom Overview] Failed to load totals:", err);
-        const body = card.querySelector(".custom-overview-body");
+        const body = card.querySelector(".card-body");
         if (body) body.textContent = "Metrics unavailable.";
       });
   }
