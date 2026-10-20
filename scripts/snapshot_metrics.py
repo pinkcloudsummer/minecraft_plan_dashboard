@@ -8,6 +8,9 @@ PLAN_DB = os.environ.get("PLAN_DB", "/opt/stacks/minecraft/data/plugins/Plan/dat
 SNAPSHOT_DB = os.environ.get("SNAPSHOT_DB", "/opt/stacks/minecraft/data/plugins/Plan/metric_snapshots.db")
 PLAN_CONFIG = os.environ.get("PLAN_CONFIG", "/opt/stacks/minecraft/data/plugins/Plan/config.yml")
 SERVER_DIR = os.environ.get("SERVER_DIR", "/opt/stacks/minecraft/data")
+# Record every stat in Minecraft's stats files, not only the ones Plan or a metric file uses.
+# Set SNAPSHOT_ALL_STATS=0 to go back to recording only the stats that are needed.
+CAPTURE_ALL_STATS = os.environ.get("SNAPSHOT_ALL_STATS", "1") != "0"
 
 # Kept in a separate file so Plan's own schema/patches never touch it.
 # Only changes are stored: a player's value at time T is the latest row with ts <= T.
@@ -33,6 +36,10 @@ CREATE TABLE IF NOT EXISTS sessions_archive (
     deaths INTEGER,
     mob_kills INTEGER,
     PRIMARY KEY (uuid, server_uuid, session_start)
+);
+CREATE TABLE IF NOT EXISTS snapshot_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 """
 
@@ -70,7 +77,8 @@ def read_plan_data():
     return values, sessions, known_uuids
 
 
-# PlaceholderAPI %statistic_<type>:<name>% type -> category in Minecraft's stats file
+# PlaceholderAPI %statistic_<type>:<name>% type -> category in Minecraft's stats file.
+# picked_up and dropped have no PlaceholderAPI form here; they are named after their category.
 STAT_CATEGORIES = {
     "mine_block": "minecraft:mined",
     "use_item": "minecraft:used",
@@ -78,13 +86,18 @@ STAT_CATEGORIES = {
     "craft_item": "minecraft:crafted",
     "kill_entity": "minecraft:killed",
     "entity_killed_by": "minecraft:killed_by",
+    "picked_up": "minecraft:picked_up",
+    "dropped": "minecraft:dropped",
 }
+CATEGORY_TO_TYPE = {category: stat_type for stat_type, category in STAT_CATEGORIES.items()}
 # Plain stats (walk_one_cm, deaths, ...) live under this category in the stats file
 PLAIN_STAT_CATEGORY = "minecraft:custom"
 # PlaceholderAPI computes these itself, so they have no matching key in the stats file
 COMPUTED_PLAIN_STATS = {
     "ticks_played", "seconds_played", "minutes_played", "hours_played", "days_played", "time_played",
 }
+# Counters that tick up constantly while online and would add a row per run for no benefit
+NOISY_PLAIN_STATS = {"time_since_death", "time_since_rest", "total_world_time"}
 
 
 TYPED_STAT = re.compile(r"^statistic_(" + "|".join(STAT_CATEGORIES) + r"):([a-z0-9_]+)$")
@@ -142,7 +155,7 @@ def read_minecraft_stats(known_uuids):
     parsed = {metric: parse_metric(metric) for metric in wanted_metrics()}
     parsed = {metric: spec for metric, spec in parsed.items() if spec}
     values = {}
-    if not directory or not parsed:
+    if not directory:
         return values
     for filename in os.listdir(directory):
         uuid = filename[:-5]
@@ -153,9 +166,28 @@ def read_minecraft_stats(known_uuids):
                 stats = json.load(f).get("stats", {})
         except (OSError, ValueError):
             continue
+        # Stats a metric needs are always recorded, as 0 when the player has never done them
         for metric, (stat_type, name) in parsed.items():
             category = stats.get(STAT_CATEGORIES[stat_type] if stat_type else PLAIN_STAT_CATEGORY, {})
             values[(uuid, metric)] = float(category.get(f"minecraft:{name}", 0))
+        if not CAPTURE_ALL_STATS:
+            continue
+        for category_name, entries in stats.items():
+            is_plain = category_name == PLAIN_STAT_CATEGORY
+            stat_type = CATEGORY_TO_TYPE.get(category_name)
+            if not is_plain and not stat_type:
+                continue
+            for key, value in entries.items():
+                if not key.startswith("minecraft:") or not isinstance(value, (int, float)):
+                    continue
+                name = key[len("minecraft:"):]
+                if is_plain:
+                    if name in NOISY_PLAIN_STATS:
+                        continue
+                    metric = f"statistic_{name}"
+                else:
+                    metric = f"statistic_{stat_type}:{name}"
+                values[(uuid, metric)] = float(value)
     return values
 
 
@@ -193,8 +225,27 @@ def main():
         for (uuid, metric), value in read_minecraft_stats(known_uuids).items()
         if (uuid, metric) not in current and latest.get((uuid, metric)) != value
     ]
+
+    # A stat missing from a stats file means 0, so once everything is being recorded, a stat that
+    # first shows up for an already-tracked player is stored with a 0 at the previous run. That
+    # keeps its first gain. It is skipped on the run that starts full capture, because the stats
+    # that appear then already had history before anyone recorded them.
+    prev_run = snap.execute("SELECT MAX(ts) FROM snapshot_runs").fetchone()[0]
+    armed = snap.execute("SELECT value FROM snapshot_meta WHERE key = 'full_capture_since'").fetchone()
+    baselines = []
+    if CAPTURE_ALL_STATS and armed and prev_run is not None:
+        tracked_players = {uuid for uuid, _ in latest}
+        baselines = [
+            (prev_run, uuid, metric, 0.0)
+            for _, uuid, metric, value in from_minecraft
+            if (uuid, metric) not in latest and uuid in tracked_players and value != 0
+        ]
+    if CAPTURE_ALL_STATS and not armed:
+        snap.execute("INSERT INTO snapshot_meta (key, value) VALUES ('full_capture_since', ?)", (str(now),))
+
     snap.executemany(
-        "INSERT INTO metric_changes (ts, uuid, metric, value) VALUES (?, ?, ?, ?)", changed + from_minecraft
+        "INSERT INTO metric_changes (ts, uuid, metric, value) VALUES (?, ?, ?, ?)",
+        changed + from_minecraft + baselines,
     )
     # INSERT OR IGNORE keeps archived sessions even after Plan deletes them
     before = snap.total_changes
@@ -210,7 +261,8 @@ def main():
 
     print(
         f"Snapshot at {now}: {len(current)} values read, {len(changed)} changed, "
-        f"{len(from_minecraft)} from Minecraft stats, {archived} new sessions archived."
+        f"{len(from_minecraft)} from Minecraft stats ({len(baselines)} zero baselines), "
+        f"{archived} new sessions archived."
     )
 
 
