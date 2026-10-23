@@ -11,5 +11,8 @@ SOURCES = [
 
 
 # Minecraft stores distance in centimetres; 100 cm is one block
+COMPONENT_SCALE = 0.01
+
+
 def combine(values):
     return sum(values) / 100

@@ -3,29 +3,25 @@ import importlib.util
 import json
 import os
 import sqlite3
+import sys
 import time
+
+# Run from cron by path, so make the sibling module importable
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import metric_details  # noqa: E402
 
 PLAN_DB = os.environ.get("PLAN_DB", "/opt/stacks/minecraft/data/plugins/Plan/database.db")
 SNAPSHOT_DB = os.environ.get("SNAPSHOT_DB", "/opt/stacks/minecraft/data/plugins/Plan/metric_snapshots.db")
 OUTPUT = os.environ.get("METRICS_OUTPUT", "/opt/stacks/minecraft/data/plugins/Plan/web/js/metrics.json")
 
-# Resources the card shows; add a line here after tracking the placeholder in plan/config.yml
-RESOURCES = [
-    ("statistic_mine_block:stone", "Stone"),
-    ("statistic_mine_block:coal_ore", "Coal Ore"),
-    ("statistic_mine_block:iron_ore", "Iron Ore"),
-    ("statistic_mine_block:copper_ore", "Copper Ore"),
-    ("statistic_mine_block:diamond_ore", "Diamond Ore"),
-]
-
 METRICS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "metrics")
 
 
 def load_derived():
-    # One file per custom metric in scripts/metrics/. A broken file is skipped so it can't
+    # One file per metric in scripts/metrics/. A broken file is skipped so it can't
     # stop the other metrics from updating.
     # A "sum" metric combines SOURCES; a "ratio" metric (KIND = "ratio") is NUMERATOR / DENOMINATOR,
-    # where each side is the sum of its listed sources.
+    # where each side is the sum of its listed sources. Optional ORDER sets the display order.
     derived, visible, ratios = [], [], {}
     for filename in sorted(os.listdir(METRICS_DIR)) if os.path.isdir(METRICS_DIR) else []:
         if not filename.endswith(".py") or filename.startswith("_"):
@@ -36,35 +32,47 @@ def load_derived():
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             name, label = module.NAME, module.LABEL
+            order = getattr(module, "ORDER", 100)
+            # Optional COMPONENT_SCALE converts component stats to the metric's unit for display
+            extra = {"component_scale": getattr(module, "COMPONENT_SCALE", 1.0)}
             if getattr(module, "KIND", "sum") == "ratio":
+                numerator = list(dict.fromkeys(module.NUMERATOR))
+                denominator = list(dict.fromkeys(module.DENOMINATOR))
                 parts = [
-                    {"name": f"{name}__num", "sources": list(dict.fromkeys(module.NUMERATOR)), "combine": sum},
-                    {"name": f"{name}__den", "sources": list(dict.fromkeys(module.DENOMINATOR)), "combine": sum},
+                    {"name": f"{name}__num", "sources": numerator, "combine": sum},
+                    {"name": f"{name}__den", "sources": denominator, "combine": sum},
                 ]
                 entry_ratios = {name: {"num": parts[0]["name"], "den": parts[1]["name"]}}
                 kind = "ratio"
+                extra.update(type="ratio", numerator=numerator, denominator=denominator)
             else:
                 # dict.fromkeys drops accidental duplicates so a source is never counted twice
+                sources = list(dict.fromkeys(module.SOURCES))
                 parts = [{
                     "name": name,
-                    "sources": list(dict.fromkeys(module.SOURCES)),
+                    "sources": sources,
                     "combine": getattr(module, "combine", sum),
                 }]
                 entry_ratios = {}
                 kind = "sum"
+                # TYPE = "single" marks a stat like coal that happens to have several layers
+                default_type = "single" if len(sources) == 1 else "aggregate"
+                extra.update(type=getattr(module, "TYPE", default_type), sources=sources)
         except Exception as err:
             print(f"Skipping metric {filename}: {err}")
             continue
         derived.extend(parts)
         ratios.update(entry_ratios)
-        visible.append({"name": name, "label": label, "kind": kind})
+        visible.append({"name": name, "label": label, "kind": kind, "order": order, **extra})
+    visible.sort(key=lambda item: item["order"])
     return derived, visible, ratios
 
 
 DERIVED, VISIBLE_DERIVED, RATIOS = load_derived()
 
-METRICS = RESOURCES + [(d["name"], d["label"]) for d in VISIBLE_DERIVED]
+METRICS = [(d["name"], d["label"]) for d in VISIBLE_DERIVED]
 KINDS = {d["name"]: d["kind"] for d in VISIBLE_DERIVED}
+TYPES = {d["name"]: d["type"] for d in VISIBLE_DERIVED}
 
 HOUR_MS = 3_600_000
 WINDOWS = {"gain_24h": 24 * HOUR_MS, "gain_7d": 7 * 24 * HOUR_MS}
@@ -177,15 +185,12 @@ def main():
         sessions = sessions_by_player.get(uuid, [])
         # Sessions that began before tracking have no baseline value, so they are skipped per resource
         spans = [(s, e) for s, e, _ in sessions]
-        active_hours = sum(max(e - s - afk, 0) for s, e, afk in sessions) / HOUR_MS
 
         entry = {
             "name": names.get(uuid, uuid[:8]),
-            "active_hours": round(active_hours, 2),
             "total": {},
             "gain_24h": {},
             "gain_7d": {},
-            "per_hour": {},
             "avg_per_session": {},
             "sessions_counted": {},
         }
@@ -197,25 +202,21 @@ def main():
                 parts_by_player.setdefault(uuid, {})[metric] = parts
                 for key, (num, den) in parts.items():
                     entry[key][metric] = round_or_none(safe_div(num, den), 3)
-                entry["per_hour"][metric] = None
                 entry["avg_per_session"][metric] = None
                 entry["sessions_counted"][metric] = 0
                 continue
             points = series.get((uuid, metric))
             if not points:
                 continue
-            total = points[-1][1]
-            entry["total"][metric] = total
+            entry["total"][metric] = points[-1][1]
             for key, window in WINDOWS.items():
                 entry[key][metric] = window_gain(points, now, window)
-            entry["per_hour"][metric] = round_or_none(total / active_hours) if active_hours > 0 else None
             gains = session_gains(points, spans)
             entry["sessions_counted"][metric] = len(gains)
             entry["avg_per_session"][metric] = round_or_none(sum(gains) / len(gains)) if gains else None
         players[uuid] = entry
 
-    total_hours = sum(p["active_hours"] for p in players.values())
-    server = {"active_hours": round(total_hours, 2), "total": {}, "gain_24h": {}, "gain_7d": {}, "per_hour": {}}
+    server = {"total": {}, "gain_24h": {}, "gain_7d": {}}
     for metric, _ in METRICS:
         if metric in RATIOS:
             # A server ratio is total numerator over total denominator, not an average of player ratios
@@ -223,13 +224,9 @@ def main():
                 nums = [parts[metric][key][0] for parts in parts_by_player.values() if metric in parts]
                 dens = [parts[metric][key][1] for parts in parts_by_player.values() if metric in parts]
                 server[key][metric] = round_or_none(safe_div(sum(nums), sum(dens)), 3)
-            server["per_hour"][metric] = None
             continue
         for key in ("total", "gain_24h", "gain_7d"):
             server[key][metric] = sum(p[key].get(metric, 0) for p in players.values())
-        server["per_hour"][metric] = (
-            round_or_none(server["total"][metric] / total_hours) if total_hours > 0 else None
-        )
 
     leaderboards = {}
     for metric, _ in METRICS:
@@ -248,20 +245,40 @@ def main():
         "generated_at": now,
         "tracking_since": tracking_since,
         "resources": [
-            {"name": name, "label": label, "kind": KINDS.get(name, "sum")} for name, label in METRICS
+            {"name": name, "label": label, "kind": KINDS.get(name, "sum"), "type": TYPES.get(name, "single")}
+            for name, label in METRICS
         ],
         "server": server,
         "players": players,
         "leaderboards": leaderboards,
     }
 
+    write_json(OUTPUT, payload)
+
+    # One detail file per metric for its page, loaded only when someone opens it
+    detail_dir = os.path.join(os.path.dirname(OUTPUT), "metric_data")
+    os.makedirs(detail_dir, exist_ok=True)
+    written = set()
+    for spec in VISIBLE_DERIVED:
+        try:
+            detail = metric_details.build_detail(spec, series, sessions_by_player, names, now, tracking_since)
+            write_json(os.path.join(detail_dir, f'{spec["name"]}.json'), detail)
+            written.add(f'{spec["name"]}.json')
+        except Exception as err:
+            print(f'Could not build details for {spec["name"]}: {err}')
+    for stale in set(os.listdir(detail_dir)) - written:
+        if stale.endswith(".json"):
+            os.remove(os.path.join(detail_dir, stale))
+    print(f"Wrote {OUTPUT}: {len(players)} players, {len(METRICS)} metrics, {len(written)} detail files.")
+
+
+def write_json(path, payload):
     # Write atomically so the dashboard never reads a half-written file
-    tmp = OUTPUT + ".tmp"
+    tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(payload, f, separators=(",", ":"))
     os.chmod(tmp, 0o644)
-    os.replace(tmp, OUTPUT)
-    print(f"Wrote {OUTPUT}: {len(players)} players, {len(METRICS)} metrics.")
+    os.replace(tmp, path)
 
 
 if __name__ == "__main__":

@@ -2,15 +2,9 @@
   console.log("[Plan Custom Overview] Script loaded.");
 
   const CARD_ID = "custom-overview-card";
-
-  // PlaceholderAPI extension values summed into the card
-  const RESOURCES = [
-    { name: "statistic_mine_block:stone", label: "🪨 Stone Mined" },
-    { name: "statistic_mine_block:coal_ore", label: "⬛ Coal Ore" },
-    { name: "statistic_mine_block:iron_ore", label: "⚙️ Iron Ore" },
-    { name: "statistic_mine_block:copper_ore", label: "🟧 Copper Ore" },
-    { name: "statistic_mine_block:diamond_ore", label: "💎 Diamond Ore" },
-  ];
+  const PAGE_ID = "custom-metric-page";
+  // Tests can point this at a local server; in production the nginx proxy serves the folder here
+  const ASSET_BASE = window.CUSTOM_ASSET_BASE || "/custom_assets/";
 
   // Only these pages get a card: server overview, plugins overview, player overview
   function getRoute() {
@@ -21,40 +15,46 @@
     return { type, id, key: location.pathname };
   }
 
-  function sumValues(extensionDataList, totals) {
-    extensionDataList.forEach((ext) => {
-      (ext.tabs || []).forEach((tab) => {
-        (tab.values || []).forEach((v) => {
-          const name = v.description && v.description.name;
-          if (!RESOURCES.some((r) => r.name === name)) return;
-          totals[name] = (totals[name] || 0) + (parseInt(v.value, 10) || 0);
-        });
-      });
-    });
+  // A metric page is shown by adding #metric=<name> (and optionally &player=<uuid>) to the URL
+  function getView() {
+    const params = new URLSearchParams(location.hash.replace(/^#/, ""));
+    const metric = params.get("metric");
+    if (!metric || !/^[a-z0-9_]+$/.test(metric)) return null;
+    const player = params.get("player");
+    return { metric, player: player && /^[0-9a-f-]{8,40}$/i.test(player) ? player : null };
   }
 
-  async function loadTotals(route) {
-    const totals = {};
-    if (route.type === "server") {
-      const res = await fetch("/v1/extensionData?server=" + route.id);
-      sumValues((await res.json()).extensions || [], totals);
+  function navigate(hash) {
+    if (hash) {
+      location.hash = hash;
     } else {
-      const res = await fetch("/v1/player?player=" + route.id);
-      // One entry per server the player has data on
-      ((await res.json()).extensions || []).forEach((entry) => sumValues(entry.extensionData || [], totals));
+      history.pushState(null, "", location.pathname + location.search);
+      sync();
     }
-    return totals;
   }
 
-  function renderRows(card, totals) {
-    const body = card.querySelector(".totals-body");
-    body.innerHTML = RESOURCES.map((r) => `
-      <p>${r.label}<span class="float-end">${(totals[r.name] || 0).toLocaleString()}</span></p>`).join("");
+  // The page code is only downloaded the first time someone opens a metric
+  let pageScript = null;
+  function loadPageScript() {
+    if (window.CustomMetricPage) return Promise.resolve();
+    if (!pageScript) {
+      pageScript = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = `${ASSET_BASE}custom_metric_page.js?t=${Date.now()}`;
+        script.onload = resolve;
+        script.onerror = () => {
+          pageScript = null;
+          reject(new Error("custom_metric_page.js failed to load"));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    return pageScript;
   }
 
   // Precomputed server-side by scripts/build_metrics.py from the snapshot database
   async function loadActivity() {
-    const res = await fetch("/custom_assets/metrics.json?t=" + Date.now());
+    const res = await fetch(`${ASSET_BASE}metrics.json?t=${Date.now()}`);
     if (!res.ok) throw new Error("metrics.json returned " + res.status);
     return res.json();
   }
@@ -65,16 +65,15 @@
     return el.innerHTML;
   }
 
-  // Ratios need more precision than counts (1.37 vs 1.4)
+  // Ratios need more precision than counts (1.37 vs 1.4); big numbers drop decimals to keep columns narrow
   function fmt(value, kind) {
     if (value === null || value === undefined) return "–";
-    return Number(value).toLocaleString(undefined, { maximumFractionDigits: kind === "ratio" ? 2 : 1 });
+    const digits = kind === "ratio" ? 2 : Math.abs(value) >= 100 ? 0 : 1;
+    return Number(value).toLocaleString(undefined, { maximumFractionDigits: digits });
   }
 
   function labelFor(resource) {
-    const known = RESOURCES.find((r) => r.name === resource.name);
-    // Keep the emoji from RESOURCES but use the short name so table rows don't wrap
-    return known ? `${known.label.split(" ")[0]} ${resource.label}` : resource.label;
+    return `<a class="co-link" href="#metric=${resource.name}">${resource.label}</a>`;
   }
 
   function renderActivity(card, route, metrics) {
@@ -86,8 +85,8 @@
       return;
     }
 
-    const columns = [["total", "Total"], ["gain_24h", "24h"], ["gain_7d", "7d"], ["per_hour", "/hr"]];
-    if (isPlayer) columns.push(["avg_per_session", "/session"]);
+    const columns = [["total", "Total"], ["gain_24h", "24h"], ["gain_7d", "7d"]];
+    if (isPlayer) columns.push(["avg_per_session", "/sess"]);
 
     const header = columns.map(([, title]) => `<th class="text-end">${title}</th>`).join("");
     const rows = metrics.resources.map((r) => {
@@ -95,29 +94,70 @@
       return `<tr><td>${labelFor(r)}</td>${cells}</tr>`;
     }).join("");
 
-    let html = `<table class="table table-sm mb-3"><thead><tr><th></th>${header}</tr></thead><tbody>${rows}</tbody></table>`;
+    let html = `<div class="table-responsive"><table class="table table-sm mb-3 co-activity"><thead><tr><th></th>${header}</tr></thead><tbody>${rows}</tbody></table></div>`;
 
     const since = new Date(metrics.tracking_since).toLocaleDateString();
-    html += `<small class="text-muted">Gains count from ${since} (when tracking began). /hr uses lifetime totals over active playtime.</small>`;
+    html += `<small class="text-muted">Gains count from ${since} (when tracking began).</small>`;
     body.innerHTML = html;
   }
 
-  function leaderboardTable(metrics, key) {
+  // One table with both boards: all time (first three columns) and the last 7 days (last three)
+  function leaderboardTable(metrics) {
+    const boards = [["total", "All time"], ["gain_7d", "Last 7 days"]];
+    const places = ["1st", "2nd", "3rd"];
     const rows = metrics.resources.map((r) => {
-      const top = (metrics.leaderboards[r.name] && metrics.leaderboards[r.name][key]) || [];
-      const cells = [0, 1, 2].map((i) => top[i]
-        ? `<td>${escapeHtml(top[i].name)} <span class="text-muted">${fmt(top[i].value, r.kind)}</span></td>`
-        : "<td>–</td>").join("");
-      return `<tr><td>${labelFor(r)}</td>${cells}</tr>`;
+      const cells = boards.map(([key], b) => {
+        const top = (metrics.leaderboards[r.name] && metrics.leaderboards[r.name][key]) || [];
+        return places.map((place, i) => {
+          const entry = top[i];
+          const name = entry ? escapeHtml(entry.name) : "–";
+          const value = entry ? `<span class="co-val text-muted">${fmt(entry.value, r.kind)}</span>` : "";
+          return `<td class="${b && i === 0 ? "co-sep" : ""}" data-rank="${i + 1}"><span class="co-name">${name}</span>${value}</td>`;
+        }).join("");
+      }).join("");
+      return `<tr><td class="co-metric">${labelFor(r)}</td>${cells}</tr>`;
     }).join("");
-    return `<table class="table table-sm mb-3"><thead><tr><th></th><th>1st</th><th>2nd</th><th>3rd</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const groupHeader = boards.map(([, title], b) => `<th colspan="3" class="${b ? "co-sep" : ""}">${title}</th>`).join("");
+    const placeHeader = boards.map((_, b) => places.map((p, i) => `<th class="${b && i === 0 ? "co-sep" : ""}">${p}</th>`).join("")).join("");
+    const legend = `<div class="co-legend">${boards.map(([, title]) => `<span>${title}</span>`).join("")}</div>`;
+    return `${legend}<div class="table-responsive"><table class="table table-sm mb-0 co-stack"><thead><tr><th></th>${groupHeader}</tr><tr><th></th>${placeHeader}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  // On phones each metric becomes a compact block (name, then all time on the left and the last
+  // 7 days on the right) and the activity table gets tighter, so nothing is wider than the screen.
+  function ensureStyles() {
+    if (document.getElementById("custom-overview-style")) return;
+    const style = document.createElement("style");
+    style.id = "custom-overview-style";
+    style.textContent = `
+      #${CARD_ID} .co-link { color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(128, 128, 128, 0.7); }
+      #${CARD_ID} .co-activity td:not(:first-child) { white-space: nowrap; }
+      #${CARD_ID} .co-stack { table-layout: fixed; font-size: 0.85rem; }
+      #${CARD_ID} .co-stack thead tr:first-child th:first-child { width: 14%; }
+      #${CARD_ID} .co-sep { border-left: 1px solid rgba(128, 128, 128, 0.25); }
+      #${CARD_ID} .co-val { margin-left: 0.35rem; white-space: nowrap; }
+      #${CARD_ID} .co-legend { display: none; }
+      @media (max-width: 991.98px) {
+        #${CARD_ID} .co-stack { font-size: 0.78rem; }
+        #${CARD_ID} .co-stack thead { display: none; }
+        #${CARD_ID} .co-legend { display: grid; grid-template-columns: 1fr 1fr; column-gap: 0.75rem; font-size: 0.78rem; font-weight: 600; color: #888; padding: 0.25rem 0; position: sticky; top: 0; z-index: 2; background-color: var(--bs-body-bg, #fff); border-bottom: 1px solid rgba(128, 128, 128, 0.25); }
+        #${CARD_ID} .co-stack tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto repeat(3, auto); grid-auto-flow: column; column-gap: 0.75rem; padding: 0.3rem 0; border-bottom: 1px solid rgba(128, 128, 128, 0.25); }
+        #${CARD_ID} .co-stack td { display: flex; justify-content: space-between; gap: 0.3rem; border: 0; padding: 0.05rem 0; min-width: 0; }
+        #${CARD_ID} .co-stack td.co-metric { grid-column: 1 / -1; grid-row: 1; font-weight: 600; font-size: 0.85rem; }
+        #${CARD_ID} .co-stack td.co-sep { border-left: 0; }
+        #${CARD_ID} .co-stack td[data-rank]::before { content: attr(data-rank); flex: none; width: 0.9rem; color: #888; }
+        #${CARD_ID} .co-stack .co-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #${CARD_ID} .co-stack .co-val { flex: none; margin-left: 0; }
+      }
+      @media (max-width: 767.98px) {
+        #${CARD_ID} .co-activity { font-size: 0.78rem; }
+        #${CARD_ID} .co-activity th, #${CARD_ID} .co-activity td { padding: 0.25rem 0.15rem; }
+      }`;
+    document.head.appendChild(style);
   }
 
   function renderLeaderboards(card, metrics) {
-    const body = card.querySelector(".leaderboard-body");
-    body.innerHTML = `
-      <p><strong>All time</strong></p>${leaderboardTable(metrics, "total")}
-      <p><strong>Last 7 days</strong></p>${leaderboardTable(metrics, "gain_7d")}`;
+    card.querySelector(".leaderboard-body").innerHTML = leaderboardTable(metrics);
   }
 
   // Plan's own cards for these extensions are replaced by the custom cards below
@@ -141,6 +181,7 @@
       return;
     }
     if (existing) existing.remove();
+    ensureStyles();
 
     // Reuse Plan's own card markup (row > col > card) so theme, dark mode and spacing are inherited
     const card = document.createElement("div");
@@ -149,15 +190,9 @@
     card.dataset.route = route.key;
     const isServer = route.type === "server";
     card.innerHTML = `
-      <div class="col-lg-6 col-md-6">
+      <div class="col-12">
         <div class="card">
-          <div class="card-header"><h6>⛏️ ${route.type === "player" ? "Player" : "Key"} Resource Totals</h6></div>
-          <div class="card-body totals-body">Loading metrics...</div>
-        </div>
-      </div>
-      <div class="col-lg-6 col-md-6">
-        <div class="card">
-          <div class="card-header"><h6>📈 Resource Activity</h6></div>
+          <div class="card-header"><h6>📈 ${isServer ? "Resource Activity" : "Player Resource Activity"}</h6></div>
           <div class="card-body activity-body">Loading metrics...</div>
         </div>
       </div>
@@ -171,22 +206,17 @@
     `;
     main.appendChild(card);
 
-    loadTotals(route)
-      .then((totals) => {
-        // Ignore the result if the user navigated away while loading
-        if (card.isConnected) renderRows(card, totals);
-      })
-      .catch((err) => {
-        console.error("[Plan Custom Overview] Failed to load totals:", err);
-        const body = card.querySelector(".totals-body");
-        if (body) body.textContent = "Metrics unavailable.";
-      });
-
     loadActivity()
       .then((metrics) => {
+        // Ignore the result if the user navigated away while loading
         if (!card.isConnected) return;
         renderActivity(card, route, metrics);
         if (isServer) renderLeaderboards(card, metrics);
+        // Coming back from a metric page: return to where the list was
+        if (returnScroll) {
+          window.scrollTo(0, returnScroll);
+          returnScroll = 0;
+        }
       })
       .catch((err) => {
         console.error("[Plan Custom Overview] Failed to load activity metrics:", err);
@@ -196,16 +226,69 @@
       });
   }
 
+  function mountMetricPage(route, view) {
+    const main = document.querySelector("main");
+    if (!main || !main.querySelector(":scope > .load-in")) return;
+
+    const key = route.key + location.hash;
+    const existing = document.getElementById(PAGE_ID);
+    if (existing && existing.dataset.key === key) {
+      if (main.lastElementChild !== existing) main.appendChild(existing);
+      return;
+    }
+    if (existing) existing.remove();
+
+    const page = document.createElement("div");
+    page.id = PAGE_ID;
+    page.className = "row";
+    page.dataset.key = key;
+    main.appendChild(page);
+    window.scrollTo(0, 0);
+
+    loadPageScript()
+      .then(() => window.CustomMetricPage.render(page, { base: ASSET_BASE, route, view, navigate }))
+      .catch((err) => {
+        console.error("[Plan Custom Overview] Could not open the metric page:", err);
+        page.textContent = "The metric page could not be loaded.";
+      });
+  }
+
+  // While a metric page is open Plan's own overview content is hidden, so it reads as its own page
+  function setNativeContentHidden(hidden) {
+    const content = document.querySelector("main > .load-in");
+    if (content) content.style.display = hidden ? "none" : "";
+  }
+
+  let returnScroll = 0;
+
   function sync() {
     hideNativeExtensions();
     const route = getRoute();
     if (!route) {
-      const stale = document.getElementById(CARD_ID);
-      if (stale) stale.remove();
+      [CARD_ID, PAGE_ID].forEach((id) => {
+        const stale = document.getElementById(id);
+        if (stale) stale.remove();
+      });
       return;
     }
-    mountCard(route);
+    const view = getView();
+    setNativeContentHidden(Boolean(view));
+    if (view) {
+      const list = document.getElementById(CARD_ID);
+      if (list) list.remove();
+      mountMetricPage(route, view);
+    } else {
+      const page = document.getElementById(PAGE_ID);
+      if (page) page.remove();
+      mountCard(route);
+    }
   }
+
+  // Remember where the list was so Back puts you in the same place
+  document.addEventListener("click", (event) => {
+    if (event.target.closest("a.co-link")) returnScroll = window.scrollY;
+  });
+  window.addEventListener("hashchange", sync);
 
   // Plan is a React SPA, so re-sync on every DOM change (route changes, late renders)
   let scheduled = false;
