@@ -8,7 +8,7 @@ BLOCKS = [
     "cooked_salmon","cooked_porkchop","cooked_trout","baked_potato", "rabbit_stew",
     "beetroot_soup","mushroom_stew","suspicious_stew",""
 ]
-SOURCES = [f"statistic_craft_block:{block}" for block in BLOCKS]
+SOURCES = [f"statistic_craft_item:{block}" for block in BLOCKS]
 
 
 # Optional: receives the source values in SOURCES order. Defaults to sum when omitted.
