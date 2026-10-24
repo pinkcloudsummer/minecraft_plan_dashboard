@@ -396,9 +396,20 @@
     return card("Recent sessions", table([scope ? "Started" : "Started / player", "Length", "Gained"], rows));
   }
 
+  // Names the real items behind one side of a ratio, e.g. "Wheat Seeds" / "Wheat Seeds (used)"
+  function sideName(block) {
+    const labels = block.components.map((c) => c.label);
+    const groups = [...new Set(block.components.map((c) => c.group.toLowerCase()))];
+    const short = labels.length <= 2 ? labels.join(" + ") : `${labels[0]} +${labels.length - 1} more`;
+    const listed = labels.length <= 3 ? labels.join(", ") : `${labels.slice(0, 3).join(", ")} +${labels.length - 3} more`;
+    return { short, full: groups.length === 1 ? `${listed} (${groups[0]})` : listed };
+  }
+
   function ratioPage(data, scope, state, nowTs) {
     const num = scopedBlock(data.num, scope);
     const den = scopedBlock(data.den, scope);
+    const nName = sideName(data.num);
+    const dName = sideName(data.den);
     const days = dayStarts(data.tracking_since, nowTs);
     const weeks = weekStarts(data.tracking_since, nowTs);
     const perDay = (map) => { const b = bucketBy(map, startOfDay); return days.map((d) => b.get(d) || 0); };
@@ -415,8 +426,8 @@
       tile("Ratio", fmt(ratioOf(num.total, den.total), true), "lifetime"),
       tile("Last 24 hours", fmt(ratioOf(num.d1, den.d1), true), `${fmt(num.d1)} ÷ ${fmt(den.d1)}`),
       tile("Last 7 days", fmt(sevenRatio, true), `${deltaHtml} vs prior 7d`),
-      tile("Numerator", fmt(num.total), "lifetime"),
-      tile("Denominator", fmt(den.total), "lifetime"),
+      tile(nName.short, fmt(num.total), "numerator · lifetime"),
+      tile(dName.short, fmt(den.total), "denominator · lifetime"),
       tile("Active days", String(activeDays), "since tracking began"),
     ].join("");
 
@@ -446,8 +457,8 @@
       const d = weeklyView ? perWeek(den.pairs) : dDaily;
       const labels = weeklyView ? weekLabels : dayLabels;
       series = [
-        { name: data.num.components.length === 1 ? data.num.components[0].label : "Numerator", color: PALETTE[0], values: n },
-        { name: data.den.components.length === 1 ? data.den.components[0].label : "Denominator", color: PALETTE[1], values: d },
+        { name: nName.short, color: PALETTE[0], values: n },
+        { name: dName.short, color: PALETTE[1], values: d },
       ];
       trendHost = chartHost("trend", {
         labels, series, height: 220,
@@ -466,13 +477,13 @@
     const rd = rhythm(den.pairs);
     const hourHost = chartHost("hours", {
       labels: rn.hours.map((_, h) => String(h)), height: 150,
-      series: [{ name: "Numerator", color: PALETTE[0], values: rn.hours }, { name: "Denominator", color: PALETTE[1], values: rd.hours }],
-      tip: (i) => `${i}:00 – ${i}:59<br>Numerator: ${fmt(rn.hours[i])}<br>Denominator: ${fmt(rd.hours[i])}`,
+      series: [{ name: nName.short, color: PALETTE[0], values: rn.hours }, { name: dName.short, color: PALETTE[1], values: rd.hours }],
+      tip: (i) => `${i}:00 – ${i}:59<br>${nName.short}: ${fmt(rn.hours[i])}<br>${dName.short}: ${fmt(rd.hours[i])}`,
     }, drawBars);
     const dowHost = chartHost("weekdays", {
       labels: WEEKDAYS, height: 150,
-      series: [{ name: "Numerator", color: PALETTE[0], values: rn.weekdays }, { name: "Denominator", color: PALETTE[1], values: rd.weekdays }],
-      tip: (i) => `${WEEKDAYS[i]}<br>Numerator: ${fmt(rn.weekdays[i])}<br>Denominator: ${fmt(rd.weekdays[i])}`,
+      series: [{ name: nName.short, color: PALETTE[0], values: rn.weekdays }, { name: dName.short, color: PALETTE[1], values: rd.weekdays }],
+      tip: (i) => `${WEEKDAYS[i]}<br>${nName.short}: ${fmt(rn.weekdays[i])}<br>${dName.short}: ${fmt(rd.weekdays[i])}`,
     }, drawBars);
 
     let players = "";
@@ -486,7 +497,7 @@
         }))
         .sort((a, b) => (ratioOf(b.n, b.d) || 0) - (ratioOf(a.n, a.d) || 0));
       players = card("Players", table(
-        ["Player", "Ratio", "7d ratio", "Num", "Den"],
+        ["Player", "Ratio", "7d ratio", esc(nName.short), esc(dName.short)],
         rows.map((r) => [`<a href="#metric=${esc(data.name)}&player=${esc(r.id)}">${esc(r.name)}</a>`, fmt(ratioOf(r.n, r.d), true), fmt(ratioOf(r.n7, r.d7), true), fmt(r.n), fmt(r.d)])
       ));
     }
@@ -495,11 +506,11 @@
     const toggle = `<div class="btn-group btn-group-sm cm-modes">${modes.map(([m, t]) => `<button type="button" class="btn btn-outline-secondary ${state.mode === m ? "active" : ""}" data-mode="${m}">${t}</button>`).join("")}</div>`;
     const html = [
       card("Trend", `<div class="cm-chart" id="cm-trend"></div>${legend(series)}<small class="text-muted">Counts from ${new Date(data.tracking_since).toLocaleDateString()} when tracking began. Ratio is numerator ÷ denominator.</small>`, toggle),
-      card("Weekly", table(["Week of", "Numerator", "Denominator", "Ratio"], weekRows)),
+      card("Weekly", table(["Week of", esc(nName.short), esc(dName.short), "Ratio"], weekRows)),
       card("When it happens", `<div class="row"><div class="col-md-8"><div class="small text-muted">By hour of day</div><div class="cm-chart" id="cm-hours"></div>${legend(hourHost.cfg.series)}</div><div class="col-md-4"><div class="small text-muted">By weekday</div><div class="cm-chart" id="cm-weekdays"></div></div></div>`),
       players,
-      componentTable(num, "Numerator breakdown", state, "num"),
-      componentTable(den, "Denominator breakdown", state, "den"),
+      componentTable(num, `Numerator: ${esc(nName.full)}`, state, "num"),
+      componentTable(den, `Denominator: ${esc(dName.full)}`, state, "den"),
     ].join("");
     return { tiles, html, hosts: [trendHost, hourHost, dowHost] };
   }
@@ -520,7 +531,8 @@
       .cm-page .cm-down { color: #dc3545; }
       .cm-page .cm-chart { position: relative; width: 100%; }
       .cm-page .cm-chart svg { display: block; }
-      .cm-page .cm-tip { position: absolute; pointer-events: none; background: rgba(30,30,30,0.92); color: #fff; font-size: 0.75rem; padding: 0.25rem 0.45rem; border-radius: 0.25rem; white-space: nowrap; z-index: 5; }
+      .cm-tip { position: fixed; pointer-events: none; background: rgba(30,30,30,0.92); color: #fff; font-size: 0.75rem; padding: 0.25rem 0.45rem; border-radius: 0.25rem; white-space: nowrap; z-index: 2000; width: auto; max-width: 280px; }
+      .cm-page .cm-chart svg { -webkit-tap-highlight-color: transparent; user-select: none; }
       .cm-page .cm-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; font-size: 0.78rem; margin: 0.35rem 0; }
       .cm-page .cm-legend i { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.3rem; }
       .cm-page .cm-bar { display: inline-block; height: 0.5rem; background: #4a90e2; border-radius: 2px; min-width: 1px; max-width: 60px; vertical-align: middle; }
@@ -560,9 +572,15 @@
     const isPlayerRoute = ctx.route.type === "player";
     const state = { scope: isPlayerRoute ? ctx.route.id : ctx.view.player || null, mode: "daily", showAll: {} };
     if (data.type === "ratio") state.mode = "daily";
-    const tip = document.createElement("div");
-    tip.className = "cm-tip";
-    tip.style.display = "none";
+    // One tooltip for the whole page, outside Bootstrap's .row so it keeps its own width
+    let tip = document.getElementById("custom-metric-tip");
+    if (!tip) {
+      tip = document.createElement("div");
+      tip.id = "custom-metric-tip";
+      tip.className = "cm-tip";
+      tip.style.display = "none";
+      document.body.appendChild(tip);
+    }
 
     const draw = () => {
       const nowTs = Date.now();
@@ -576,7 +594,9 @@
           <option value="">Whole server</option>
           ${Object.keys(data.players).sort((a, b) => data.players[a].localeCompare(data.players[b])).map((id) => `<option value="${esc(id)}" ${id === state.scope ? "selected" : ""}>${esc(data.players[id])}</option>`).join("")}
         </select>`;
-      const note = data.type === "ratio" ? "Ratio · numerator ÷ denominator" : data.type === "aggregate" ? `Combined stat · ${data.main.components.length} stats added together` : TYPE_NOTES[data.type] || "";
+      const note = data.type === "ratio"
+        ? `Ratio · ${sideName(data.num).full} ÷ ${sideName(data.den).full}`
+        : data.type === "aggregate" ? `Combined stat · ${data.main.components.length} stats added together` : TYPE_NOTES[data.type] || "";
       const header = card(
         `<a class="cm-back" href="#">←</a> ${esc(data.label)}`,
         `<div class="text-muted">${esc(note)} · ${esc(scopeName)}</div>
@@ -584,7 +604,6 @@
          ${page ? `<div class="cm-tiles">${page.tiles}</div>` : '<div class="mt-2">No data for this player yet.</div>'}`
       );
       root.innerHTML = header + (page ? page.html : "");
-      root.appendChild(tip);
 
       const drawAll = () => {
         if (!page) return;
@@ -605,20 +624,25 @@
         });
       }
       root.querySelectorAll(".cm-chart").forEach((chart) => {
+        // Hover tooltips are for mice only. Touch taps would pin a tooltip over the page.
         const show = (event) => {
+          if (event.pointerType === "touch" || event.pointerType === "pen") return;
           const target = event.target.closest("[data-tip]");
           if (!target) { tip.style.display = "none"; return; }
           tip.innerHTML = target.dataset.tip;
           tip.style.display = "block";
-          const box = root.getBoundingClientRect();
-          const x = Math.min(event.clientX - box.left + 12, box.width - tip.offsetWidth - 4);
+          const x = Math.min(event.clientX + 12, window.innerWidth - tip.offsetWidth - 4);
+          const above = event.clientY - tip.offsetHeight - 10;
           tip.style.left = `${Math.max(x, 4)}px`;
-          tip.style.top = `${event.clientY - box.top - tip.offsetHeight - 10}px`;
+          tip.style.top = `${above < 4 ? event.clientY + 16 : above}px`;
         };
         chart.addEventListener("pointermove", show);
-        chart.addEventListener("pointerdown", show);
         chart.addEventListener("pointerleave", () => { tip.style.display = "none"; });
       });
+      if (!root._scrollBound) {
+        root._scrollBound = true;
+        window.addEventListener("scroll", () => { tip.style.display = "none"; }, { passive: true });
+      }
     };
 
     // Re-draw charts when the width changes (rotating a phone, resizing a window)
