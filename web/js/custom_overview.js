@@ -137,7 +137,34 @@
       #${CARD_ID} .co-sep { border-left: 1px solid rgba(128, 128, 128, 0.25); }
       #${CARD_ID} .co-val { margin-left: 0.35rem; white-space: nowrap; }
       #${CARD_ID} .co-legend { display: none; }
+      #${CARD_ID} .co-mobile-tabs { display: none; }
+      #${CARD_ID} .co-records-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.65rem; }
+      #${CARD_ID} .co-record-box { border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 0.45rem; padding: 0.6rem 0.75rem; background: rgba(128, 128, 128, 0.04); display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.15s ease; }
+      #${CARD_ID} .co-record-box:hover { border-color: rgba(74, 144, 226, 0.55); }
+      #${CARD_ID} .co-rec-head { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; font-size: 0.78rem; font-weight: 600; opacity: 0.85; }
+      #${CARD_ID} .co-rec-val { font-size: 1.25rem; font-weight: 700; line-height: 1.25; margin: 0.2rem 0 0.1rem; }
+      #${CARD_ID} .co-rec-unit { font-size: 0.78rem; font-weight: 500; opacity: 0.7; margin-left: 0.2rem; }
+      #${CARD_ID} .co-rec-meta { font-size: 0.75rem; opacity: 0.8; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem; }
+      #${CARD_ID} .co-rec-top5 { margin-top: 0.45rem; padding-top: 0.4rem; border-top: 1px dashed rgba(128, 128, 128, 0.25); font-size: 0.73rem; display: none; }
+      #${CARD_ID} .co-record-box.is-open .co-rec-top5 { display: block; }
+      #${CARD_ID} .co-rec-toggle { cursor: pointer; user-select: none; font-size: 0.7rem; opacity: 0.65; text-decoration: underline dotted; }
+      #${CARD_ID} .co-rec-row { display: flex; justify-content: space-between; gap: 0.35rem; padding: 0.08rem 0; }
+      #${CARD_ID} .co-habits-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.65rem; }
+      #${CARD_ID} .co-habit-box { border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 0.45rem; padding: 0.65rem 0.75rem; background: rgba(128, 128, 128, 0.04); }
+      #${CARD_ID} .co-habit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; margin-bottom: 0.35rem; }
+      #${CARD_ID} .co-habit-name { font-weight: 700; font-size: 0.92rem; }
+      #${CARD_ID} .co-habit-arch { font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 999px; background: rgba(74, 144, 226, 0.15); font-weight: 600; white-space: nowrap; }
+      #${CARD_ID} .co-pill-list { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.35rem 0; }
+      #${CARD_ID} .co-pill { font-size: 0.72rem; padding: 0.12rem 0.42rem; border-radius: 0.3rem; border: 1px solid rgba(128, 128, 128, 0.28); background: rgba(128, 128, 128, 0.07); }
+      #${CARD_ID} .co-mix-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: rgba(128, 128, 128, 0.2); margin: 0.35rem 0 0.25rem; }
+      #${CARD_ID} .co-social-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
+      #${CARD_ID} .co-social-box { border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 0.45rem; padding: 0.65rem 0.75rem; background: rgba(128, 128, 128, 0.04); }
+      #${CARD_ID} .co-social-title { font-size: 0.85rem; font-weight: 700; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between; }
+      #${CARD_ID} .co-duo-row { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; padding: 0.25rem 0; border-bottom: 1px solid rgba(128, 128, 128, 0.14); font-size: 0.8rem; }
+      #${CARD_ID} .co-duo-row:last-child { border-bottom: 0; }
+      #${CARD_ID} .co-sub-badge { font-size: 0.7rem; opacity: 0.75; white-space: nowrap; }
       @media (max-width: 991.98px) {
+        #${CARD_ID} .co-social-grid { grid-template-columns: 1fr; }
         #${CARD_ID} .co-stack { font-size: 0.78rem; }
         #${CARD_ID} .co-stack thead { display: none; }
         #${CARD_ID} .co-legend { display: grid; grid-template-columns: 1fr 1fr; column-gap: 0.75rem; font-size: 0.78rem; font-weight: 600; color: #888; padding: 0.25rem 0; position: sticky; top: 0; z-index: 2; background-color: var(--bs-body-bg, #fff); border-bottom: 1px solid rgba(128, 128, 128, 0.25); }
@@ -150,10 +177,261 @@
         #${CARD_ID} .co-stack .co-val { flex: none; margin-left: 0; }
       }
       @media (max-width: 767.98px) {
+        #${CARD_ID} .co-mobile-tabs { display: flex; gap: 0.35rem; margin-bottom: 0.6rem; overflow-x: auto; padding-bottom: 0.15rem; }
+        #${CARD_ID} .co-mobile-tabs button { flex: 1 1 auto; white-space: nowrap; font-size: 0.76rem; padding: 0.28rem 0.5rem; border-radius: 0.35rem; border: 1px solid rgba(128, 128, 128, 0.35); background: transparent; color: inherit; }
+        #${CARD_ID} .co-mobile-tabs button.active { background: #4a90e2; border-color: #4a90e2; color: #fff; font-weight: 600; }
+        #${CARD_ID} .co-tab-pane:not(.active) { display: none; }
+        #${CARD_ID} .co-records-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45rem; }
+        #${CARD_ID} .co-record-box { padding: 0.45rem 0.55rem; }
+        #${CARD_ID} .co-rec-val { font-size: 1.05rem; }
+        #${CARD_ID} .co-habits-grid { grid-template-columns: 1fr; gap: 0.5rem; }
         #${CARD_ID} .co-activity { font-size: 0.78rem; }
         #${CARD_ID} .co-activity th, #${CARD_ID} .co-activity td { padding: 0.25rem 0.15rem; }
       }`;
     document.head.appendChild(style);
+  }
+
+  const MIX_COLORS = {
+    mining: "#4a90e2",
+    lumber: "#8b5a2b",
+    farming: "#50b46b",
+    crafting: "#f5a623",
+    combat: "#e0556b",
+    exploration: "#9b6bd1",
+  };
+
+  function fmtDateShort(dateStr) {
+    if (!dateStr) return "";
+    const parts = String(dateStr).split("-");
+    if (parts.length !== 3) return dateStr;
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function renderServerRecordsSection(records) {
+    if (!records || !records.length) {
+      return '<span class="text-muted">No server records recorded yet.</span>';
+    }
+    const boxes = records.map((rec) => {
+      const topList = rec.top || [];
+      const first = topList[0];
+      if (!first) {
+        return `<div class="co-record-box">
+          <div class="co-rec-head"><span>${rec.icon} ${escapeHtml(rec.title)}</span></div>
+          <div class="co-rec-val text-muted">–</div>
+          <div class="co-rec-meta"><span>${escapeHtml(rec.subtitle || "")}</span></div>
+        </div>`;
+      }
+      const mainVal = first.display_value ? escapeHtml(first.display_value) : fmt(first.value, rec.kind === "day_hours" ? "ratio" : "sum");
+      const unitStr = first.display_value ? "" : `<span class="co-rec-unit">${escapeHtml(first.unit || "")}</span>`;
+      let subLeft = fmtDateShort(first.date);
+      let subRight = "";
+      if (rec.kind === "people") {
+        subRight = first.top_player ? escapeHtml(first.top_player) : "";
+      } else if (rec.kind === "session") {
+        subRight = `${escapeHtml(first.top_player || "")} (${first.active_pct ?? 100}% active)`;
+      } else if (first.top_player) {
+        const topVal = first.top_player_value ? ` (${fmt(first.top_player_value)})` : "";
+        subRight = `🏅 ${escapeHtml(first.top_player)}${topVal}`;
+      }
+
+      const moreRows = topList.slice(1, 5).map((item, idx) => {
+        const vStr = item.display_value ? escapeHtml(item.display_value) : `${fmt(item.value)} ${escapeHtml(item.unit || "")}`;
+        const who = item.top_player ? ` · ${escapeHtml(item.top_player)}` : "";
+        return `<div class="co-rec-row"><span>#${idx + 2} ${escapeHtml(fmtDateShort(item.date))}${who}</span><strong>${vStr}</strong></div>`;
+      }).join("");
+
+      const toggleBtn = moreRows ? `<span class="co-rec-toggle" data-rec-toggle>Top ${topList.length} ▾</span>` : "";
+      const top5Block = moreRows ? `<div class="co-rec-top5">${moreRows}</div>` : "";
+
+      return `<div class="co-record-box">
+        <div>
+          <div class="co-rec-head"><span>${rec.icon} ${escapeHtml(rec.title)}</span>${toggleBtn}</div>
+          <div class="co-rec-val">${mainVal}${unitStr}</div>
+        </div>
+        <div>
+          <div class="co-rec-meta"><span>📅 ${escapeHtml(subLeft)}</span><span>${subRight}</span></div>
+          ${top5Block}
+        </div>
+      </div>`;
+    }).join("");
+
+    return `<div class="co-records-grid">${boxes}</div>`;
+  }
+
+  function renderHabitBox(p) {
+    const mix = p.activity_mix || [];
+    const mixBar = mix.length
+      ? `<div class="co-mix-bar" title="${escapeHtml(mix.map((m) => `${m.short}: ${m.share_pct}%`).join(" · "))}">
+          ${mix.map((m) => `<div style="width:${Math.max(4, m.share_pct)}%;background:${MIX_COLORS[m.key] || "#4a90e2"}"></div>`).join("")}
+         </div>`
+      : "";
+    const mixLegend = mix.slice(0, 3).map((m) => `<span class="co-sub-badge"><i style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${MIX_COLORS[m.key] || "#4a90e2"};margin-right:3px"></i>${escapeHtml(m.short)} ${m.share_pct}%</span>`).join(" · ");
+
+    const habits = (p.habits || []).map((h) => `<span class="co-pill" title="${escapeHtml(h.text)}">${h.icon} ${escapeHtml(h.title)}</span>`).join("");
+
+    return `<div class="co-habit-box">
+      <div class="co-habit-head">
+        <span class="co-habit-name">${escapeHtml(p.name)}</span>
+        <span class="co-habit-arch">${escapeHtml(p.primary_archetype || "Explorer")}</span>
+      </div>
+      <div class="co-rec-meta">
+        <span>🕒 Peak: <strong>${escapeHtml(p.fav_hour_label)}</strong> (${p.fav_hour_pct}%)</span>
+        <span>📅 Fav: <strong>${escapeHtml(p.fav_weekday_short)}</strong> · Wknd ${p.weekend_pct}%</span>
+      </div>
+      ${mixBar}
+      <div class="mb-1">${mixLegend || '<span class="co-sub-badge">Gathering baseline stats…</span>'}</div>
+      ${habits ? `<div class="co-pill-list">${habits}</div>` : ""}
+      <div class="co-rec-meta mt-1">
+        <span>${p.session_count} sess · avg ${p.avg_session_mins}m</span>
+        <span>max ${escapeHtml(p.longest_session_display || "0m")}${p.tiny_sessions ? ` · ${p.tiny_sessions} tiny` : ""}</span>
+      </div>
+    </div>`;
+  }
+
+  function renderServerHabitsSection(habitsMap) {
+    const list = Object.values(habitsMap || {}).filter((p) => p.session_count > 0 || (p.activity_mix && p.activity_mix.length > 0));
+    list.sort((a, b) => (b.total_hours - a.total_hours) || (b.session_count - a.session_count));
+    if (!list.length) {
+      return '<span class="text-muted">No session habit profiles available yet.</span>';
+    }
+    return `<div class="co-habits-grid">${list.map(renderHabitBox).join("")}</div>`;
+  }
+
+  function renderServerSocialSection(social) {
+    if (!social) return '<span class="text-muted">No co-play data available yet.</span>';
+    const duos = social.top_duos || [];
+    const ships = social.ships_in_night || [];
+    const soloSocial = social.solo_vs_social || [];
+
+    const duosHtml = duos.length
+      ? duos.slice(0, 6).map((d) => `<div class="co-duo-row">
+          <span><strong>${escapeHtml(d.name1)}</strong> &amp; <strong>${escapeHtml(d.name2)}</strong></span>
+          <span class="text-end"><strong>${escapeHtml(d.shared_display)}</strong> <span class="co-sub-badge">(${d.overlap_pct}% overlap · ${d.shared_sessions} sess)</span></span>
+        </div>`).join("")
+      : '<div class="text-muted small">No overlapping sessions recorded yet.</div>';
+
+    const shipsHtml = ships.length
+      ? ships.slice(0, 6).map((s) => {
+          const missBadge = s.near_misses > 0
+            ? `${s.near_misses} near-miss${s.near_misses === 1 ? "" : "es"} (<30m)`
+            : s.closest_gap_mins !== null ? `closest gap ${s.closest_gap_mins}m` : "never crossed paths";
+          return `<div class="co-duo-row">
+            <span><strong>${escapeHtml(s.name1)}</strong> &amp; <strong>${escapeHtml(s.name2)}</strong></span>
+            <span class="text-end"><span class="co-sub-badge">${s.overlap_pct}% overlap · ${escapeHtml(missBadge)}</span></span>
+          </div>`;
+        }).join("")
+      : '<div class="text-muted small">Not enough player pairs to compare yet.</div>';
+
+    const socialHtml = soloSocial.length
+      ? soloSocial.slice(0, 6).map((p) => `<div class="co-duo-row">
+          <span><strong>${escapeHtml(p.name)}</strong> <span class="co-sub-badge">(${p.total_hours}h)</span></span>
+          <span class="text-end">🤝 ${p.social_pct}% group · 🐺 ${p.solo_pct}% solo</span>
+        </div>`).join("")
+      : '<div class="text-muted small">No session overlap breakdown yet.</div>';
+
+    return `<div class="co-social-grid">
+      <div class="co-social-box">
+        <div class="co-social-title"><span>🤝 Dynamic Duos (Most Time Together)</span></div>
+        ${duosHtml}
+      </div>
+      <div class="co-social-box">
+        <div class="co-social-title"><span>🚢 Ships in the Night (Keep Missing Each Other)</span></div>
+        ${shipsHtml}
+      </div>
+      <div class="co-social-box">
+        <div class="co-social-title"><span>🧲 Social Butterfly vs. Lone Wolf</span></div>
+        ${socialHtml}
+      </div>
+    </div>`;
+  }
+
+  function renderInsights(card, route, metrics) {
+    const insights = metrics.insights;
+    if (!insights) return;
+
+    if (route.type === "server") {
+      const container = card.querySelector(".insights-body");
+      if (!container) return;
+      container.innerHTML = `
+        <div class="co-mobile-tabs">
+          <button type="button" class="active" data-co-tab="records">🏅 Top Days &amp; Records</button>
+          <button type="button" data-co-tab="habits">🕒 Session Habits</button>
+          <button type="button" data-co-tab="social">🤝 Co-Play &amp; Missed</button>
+        </div>
+        <div class="co-tab-pane active" data-co-pane="records">
+          <div class="small text-muted mb-2">All-time single-day server highs and marathon milestones. Click any card with a <em>Top 5</em> link to expand runner-up days.</div>
+          ${renderServerRecordsSection(insights.records)}
+        </div>
+        <div class="co-tab-pane mt-3" data-co-pane="habits">
+          <h6 class="mb-2" style="font-size:0.9rem;font-weight:700">🕒 Player Session Archetypes &amp; Day/Time Habits</h6>
+          <div class="small text-muted mb-2">How players split their sessions by activity, weekday vs. weekend, and favorite hour of the day.</div>
+          ${renderServerHabitsSection(insights.habits)}
+        </div>
+        <div class="co-tab-pane mt-3" data-co-pane="social">
+          <h6 class="mb-2" style="font-size:0.9rem;font-weight:700">🤝 Co-Play Dynamics &amp; Missed Connections</h6>
+          ${renderServerSocialSection(insights.social)}
+        </div>
+      `;
+
+      // Bind Top-5 expanders on record boxes
+      container.querySelectorAll("[data-rec-toggle]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const box = btn.closest(".co-record-box");
+          if (box) box.classList.toggle("is-open");
+        });
+      });
+
+      // Bind mobile tab switcher
+      const tabBtns = container.querySelectorAll("[data-co-tab]");
+      const panes = container.querySelectorAll("[data-co-pane]");
+      tabBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const target = btn.dataset.coTab;
+          tabBtns.forEach((b) => b.classList.toggle("active", b === btn));
+          panes.forEach((p) => {
+            p.classList.toggle("active", p.dataset.coPane === target);
+            if (window.innerWidth <= 767.98) {
+              p.classList.remove("mt-3");
+            }
+          });
+        });
+      });
+    } else {
+      const container = card.querySelector(".player-insights-body");
+      if (!container) return;
+      const pHabit = insights.habits && insights.habits[route.id];
+      const pSocial = insights.social && insights.social.by_player && insights.social.by_player[route.id];
+      if (!pHabit && !pSocial) {
+        container.textContent = "No session insights recorded for this player yet.";
+        return;
+      }
+      const buddies = (pSocial && pSocial.buddies) || [];
+      const missed = (pSocial && pSocial.missed) || [];
+
+      const buddiesHtml = buddies.length
+        ? buddies.map((b) => `<div class="co-duo-row"><span><strong>${escapeHtml(b.name)}</strong></span><span>${escapeHtml(b.shared_display)} <span class="co-sub-badge">(${b.overlap_pct}% of playtime)</span></span></div>`).join("")
+        : '<div class="text-muted small">No co-play overlap recorded yet.</div>';
+
+      const missedHtml = missed.length
+        ? missed.map((m) => `<div class="co-duo-row"><span><strong>${escapeHtml(m.name)}</strong></span><span class="co-sub-badge">${m.near_misses ? `${m.near_misses} near-misses (<30m)` : `${m.overlap_pct}% overlap`}</span></div>`).join("")
+        : '<div class="text-muted small">No missed connections detected.</div>';
+
+      container.innerHTML = `
+        <div class="co-social-grid">
+          ${pHabit ? renderHabitBox(pHabit) : ""}
+          <div class="co-social-box">
+            <div class="co-social-title"><span>🤝 Top Co-Play Buddies</span><span class="co-sub-badge">${pSocial ? `${pSocial.social_pct}% group / ${pSocial.solo_pct}% solo` : ""}</span></div>
+            ${buddiesHtml}
+          </div>
+          <div class="co-social-box">
+            <div class="co-social-title"><span>🚢 Ships in the Night</span></div>
+            ${missedHtml}
+          </div>
+        </div>
+      `;
+    }
   }
 
   function renderLeaderboards(card, metrics) {
@@ -192,6 +470,12 @@
     card.innerHTML = `
       <div class="col-12">
         <div class="card">
+          <div class="card-header"><h6>${isServer ? "🏛️ All-Time Server Records &amp; Session Insights" : "🕒 Player Session Profile &amp; Co-Play"}</h6></div>
+          <div class="card-body ${isServer ? "insights-body" : "player-insights-body"}">Loading insights...</div>
+        </div>
+      </div>
+      <div class="col-12">
+        <div class="card">
           <div class="card-header"><h6>📈 ${isServer ? "Resource Activity" : "Player Resource Activity"}</h6></div>
           <div class="card-body activity-body">Loading metrics...</div>
         </div>
@@ -210,6 +494,7 @@
       .then((metrics) => {
         // Ignore the result if the user navigated away while loading
         if (!card.isConnected) return;
+        renderInsights(card, route, metrics);
         renderActivity(card, route, metrics);
         if (isServer) renderLeaderboards(card, metrics);
         // Coming back from a metric page: return to where the list was
@@ -220,7 +505,7 @@
       })
       .catch((err) => {
         console.error("[Plan Custom Overview] Failed to load activity metrics:", err);
-        card.querySelectorAll(".activity-body, .leaderboard-body").forEach((body) => {
+        card.querySelectorAll(".insights-body, .player-insights-body, .activity-body, .leaderboard-body").forEach((body) => {
           body.textContent = "Activity metrics not available yet.";
         });
       });

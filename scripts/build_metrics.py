@@ -9,6 +9,7 @@ import time
 # Run from cron by path, so make the sibling module importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import metric_details  # noqa: E402
+import server_insights  # noqa: E402
 
 PLAN_DB = os.environ.get("PLAN_DB", "/opt/stacks/minecraft/data/plugins/Plan/database.db")
 SNAPSHOT_DB = os.environ.get("SNAPSHOT_DB", "/opt/stacks/minecraft/data/plugins/Plan/metric_snapshots.db")
@@ -171,12 +172,17 @@ def main():
     tracking_since = snap.execute("SELECT MIN(ts) FROM snapshot_runs").fetchone()[0]
 
     sessions_by_player = {}
-    for uuid, start, end, afk in snap.execute(
-        "SELECT uuid, session_start, session_end, COALESCE(afk_time, 0) "
+    full_sessions_by_player = {}
+    for uuid, start, end, afk, deaths, mob_kills in snap.execute(
+        "SELECT uuid, session_start, session_end, COALESCE(afk_time, 0), "
+        "COALESCE(deaths, 0), COALESCE(mob_kills, 0) "
         "FROM sessions_archive ORDER BY uuid, session_start"
     ):
         sessions_by_player.setdefault(uuid, []).append((start, end, afk))
+        full_sessions_by_player.setdefault(uuid, []).append((start, end, afk, deaths, mob_kills))
     snap.close()
+
+    insights = server_insights.build_insights(series, full_sessions_by_player, names)
 
     uuids = sorted({uuid for uuid, _ in series})
     players = {}
@@ -251,6 +257,7 @@ def main():
         "server": server,
         "players": players,
         "leaderboards": leaderboards,
+        "insights": insights,
     }
 
     write_json(OUTPUT, payload)

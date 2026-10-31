@@ -6,7 +6,7 @@ LABEL = "👨‍🍳 Master Chef"
 BLOCKS = [
     "cooked_beef","cooked_chicken","cooked_mutton","cooked_rabbit","cooked_cod",
     "cooked_salmon","cooked_porkchop","cooked_trout","baked_potato", "rabbit_stew",
-    "beetroot_soup","mushroom_stew","suspicious_stew",""
+    "beetroot_soup","mushroom_stew","suspicious_stew"
 ]
 SOURCES = [f"statistic_craft_item:{block}" for block in BLOCKS]
 
