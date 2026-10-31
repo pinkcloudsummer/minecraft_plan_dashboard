@@ -151,10 +151,12 @@
       #${CARD_ID} .co-rec-row { display: flex; justify-content: space-between; gap: 0.35rem; padding: 0.08rem 0; }
       #${CARD_ID} .co-habits-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.65rem; }
       #${CARD_ID} .co-habit-box { border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 0.45rem; padding: 0.65rem 0.75rem; background: rgba(128, 128, 128, 0.04); cursor: pointer; transition: border-color 0.15s ease; }
+      #${CARD_ID} .co-habit-box.is-static { cursor: default; }
       #${CARD_ID} .co-habit-box:hover { border-color: rgba(74, 144, 226, 0.55); }
       #${CARD_ID} .co-habit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; margin-bottom: 0.35rem; }
       #${CARD_ID} .co-habit-name { font-weight: 700; font-size: 0.92rem; color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(128, 128, 128, 0.7); }
       #${CARD_ID} .co-habit-name:hover { color: #4a90e2; }
+      #${CARD_ID} .co-habit-name-static { font-weight: 700; font-size: 0.92rem; }
       #${CARD_ID} .co-habit-expand-hint { font-size: 0.72rem; opacity: 0.65; text-decoration: underline dotted; white-space: nowrap; }
       #${CARD_ID} .co-habit-details { display: none; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed rgba(128, 128, 128, 0.25); font-size: 0.75rem; cursor: default; }
       #${CARD_ID} .co-habit-box.is-open .co-habit-details { display: block; }
@@ -164,7 +166,14 @@
       #${CARD_ID} .co-dow-lbl { font-size: 0.65rem; opacity: 0.7; margin-top: 2px; }
       #${CARD_ID} .co-split-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: rgba(128, 128, 128, 0.2); margin: 0.35rem 0 0.25rem; }
       #${CARD_ID} .co-mix-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: rgba(128, 128, 128, 0.2); margin: 0.35rem 0 0.25rem; }
+      #${CARD_ID} .co-cohorts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 0.65rem; margin-bottom: 0.75rem; }
+      #${CARD_ID} .co-cohort-box { border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 0.45rem; padding: 0.6rem 0.75rem; background: rgba(128, 128, 128, 0.04); display: flex; flex-direction: column; justify-content: space-between; gap: 0.3rem; }
+      #${CARD_ID} .co-cohort-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; font-size: 0.84rem; font-weight: 700; }
+      #${CARD_ID} .co-cohort-members { display: flex; flex-wrap: wrap; gap: 0.28rem; margin: 0.1rem 0; }
+      #${CARD_ID} .co-cohort-pill { font-size: 0.74rem; font-weight: 600; padding: 0.1rem 0.42rem; border-radius: 999px; background: rgba(74, 144, 226, 0.13); color: inherit; text-decoration: none; border: 1px solid rgba(74, 144, 226, 0.28); }
+      #${CARD_ID} .co-cohort-pill:hover { border-color: #4a90e2; color: #4a90e2; }
       #${CARD_ID} .co-social-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
+      #${CARD_ID} .co-player-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; }
       #${CARD_ID} .co-social-box { border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 0.45rem; padding: 0.65rem 0.75rem; background: rgba(128, 128, 128, 0.04); }
       #${CARD_ID} .co-social-title { font-size: 0.85rem; font-weight: 700; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between; }
       #${CARD_ID} .co-duo-row { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; padding: 0.25rem 0; border-bottom: 1px solid rgba(128, 128, 128, 0.14); font-size: 0.8rem; }
@@ -269,7 +278,7 @@
 
   const WEEKDAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-  function renderHabitBox(p, startExpanded) {
+  function renderHabitBox(p, isPlayerPage) {
     const wkdayPct = p.weekday_pct !== undefined ? p.weekday_pct : (100 - (p.weekend_pct || 0));
     const wkendPct = p.weekend_pct || 0;
     const splitBar = `<div class="co-split-bar" title="Weekdays: ${wkdayPct}% · Weekends: ${wkendPct}%">
@@ -316,12 +325,21 @@
       : "";
 
     const playerUrl = `/player/${encodeURIComponent(p.uuid)}/overview`;
+    const headHtml = isPlayerPage
+      ? `<div class="co-habit-head"><span class="co-habit-name-static">🕒 ${escapeHtml(p.name)}'s Time Split</span></div>`
+      : `<div class="co-habit-head">
+          <a class="co-habit-name" href="${playerUrl}" data-player-link title="Open player overview page">${escapeHtml(p.name)}</a>
+          <span class="co-habit-expand-hint" data-habit-toggle>Time split ▾</span>
+        </div>`;
 
-    return `<div class="co-habit-box${startExpanded ? " is-open" : ""}" data-habit-box>
-      <div class="co-habit-head">
-        <a class="co-habit-name" href="${playerUrl}" data-player-link title="Open player overview page">${escapeHtml(p.name)}</a>
-        <span class="co-habit-expand-hint" data-habit-toggle>${startExpanded ? "Details ▴" : "Time split ▾"}</span>
-      </div>
+    const footerLinkHtml = isPlayerPage
+      ? ""
+      : `<div class="mt-2 pt-1 text-end">
+          <a class="co-link small fw-semibold" href="${playerUrl}" data-player-link>Open Player Overview →</a>
+        </div>`;
+
+    return `<div class="co-habit-box${isPlayerPage ? " is-open is-static" : ""}"${isPlayerPage ? "" : " data-habit-box"}>
+      ${headHtml}
       <div class="co-rec-meta">
         <span>🕒 Fav time: <strong>${escapeHtml(p.fav_hour_label)}</strong> (${p.fav_hour_pct}%)</span>
         <span>📅 Fav day: <strong>${escapeHtml(p.fav_weekday_short)}</strong> (${p.fav_weekday_pct}%)</span>
@@ -340,9 +358,7 @@
         ${dowBarsHtml}
         ${todHtml}
         ${mixHtml}
-        <div class="mt-2 pt-1 text-end">
-          <a class="co-link small fw-semibold" href="${playerUrl}" data-player-link>Open Player Overview →</a>
-        </div>
+        ${footerLinkHtml}
       </div>
     </div>`;
   }
@@ -356,11 +372,48 @@
     return `<div class="co-habits-grid">${list.map((p) => renderHabitBox(p, false)).join("")}</div>`;
   }
 
+  function renderServerCohortsSection(cohorts) {
+    if (!cohorts || !cohorts.length) return "";
+    const cards = cohorts.map((c) => {
+      const membersHtml = (c.members || []).map((m) => {
+        const url = `/player/${encodeURIComponent(m.uuid)}/overview`;
+        return `<a class="co-cohort-pill" href="${url}" data-player-link>${escapeHtml(m.name)}</a>`;
+      }).join("");
+      return `<div class="co-cohort-box">
+        <div>
+          <div class="co-cohort-head">
+            <span>${escapeHtml(c.title)}</span>
+            <span class="co-sub-badge">${escapeHtml(c.shared_display)} (${c.shared_sessions} sess)</span>
+          </div>
+          <div class="co-cohort-members">${membersHtml}</div>
+        </div>
+        <div>
+          <div class="co-rec-meta">
+            <span>🕒 ${escapeHtml(c.time_window)} (${c.time_window_pct}%)</span>
+            <span>Peak <strong>${escapeHtml(c.peak_hour)}</strong></span>
+          </div>
+          <div class="co-rec-meta mt-1">
+            <span>📅 ${escapeHtml(c.day_pattern)}</span>
+            <span>${c.shared_days} shared day${c.shared_days === 1 ? "" : "s"}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
+    return `<div class="mb-2">
+      <div class="small fw-semibold mb-1">👥 Detected Play Cohorts &amp; Crews (Groups &amp; When They Play Together)</div>
+      <div class="co-cohorts-grid">${cards}</div>
+    </div>`;
+  }
+
   function renderServerSocialSection(social) {
     if (!social) return '<span class="text-muted">No co-play data available yet.</span>';
+    const cohorts = social.cohorts || [];
     const duos = social.top_duos || [];
     const ships = social.ships_in_night || [];
     const soloSocial = social.solo_vs_social || [];
+
+    const cohortsBlock = renderServerCohortsSection(cohorts);
 
     const duosHtml = duos.length
       ? duos.slice(0, 6).map((d) => `<div class="co-duo-row">
@@ -388,7 +441,7 @@
         </div>`).join("")
       : '<div class="text-muted small">No session overlap breakdown yet.</div>';
 
-    return `<div class="co-social-grid">
+    return `${cohortsBlock}<div class="co-social-grid">
       <div class="co-social-box">
         <div class="co-social-title"><span>🤝 Dynamic Duos (Most Time Together)</span></div>
         ${duosHtml}
@@ -415,7 +468,7 @@
         <div class="co-mobile-tabs">
           <button type="button" class="active" data-co-tab="records">🏅 Top Days &amp; Records</button>
           <button type="button" data-co-tab="habits">🕒 Session Habits</button>
-          <button type="button" data-co-tab="social">🤝 Co-Play &amp; Missed</button>
+          <button type="button" data-co-tab="social">🤝 Co-Play &amp; Cohorts</button>
         </div>
         <div class="co-tab-pane active" data-co-pane="records">
           <div class="small text-muted mb-2">All-time single-day server highs and marathon milestones. Click any card with a <em>Top 5</em> link to expand runner-up days.</div>
@@ -427,7 +480,7 @@
           ${renderServerHabitsSection(insights.habits)}
         </div>
         <div class="co-tab-pane mt-3" data-co-pane="social">
-          <h6 class="mb-2" style="font-size:0.9rem;font-weight:700">🤝 Co-Play Dynamics &amp; Missed Connections</h6>
+          <h6 class="mb-2" style="font-size:0.9rem;font-weight:700">🤝 Co-Play Cohorts, Duos &amp; Missed Connections</h6>
           ${renderServerSocialSection(insights.social)}
         </div>
       `;
@@ -474,39 +527,53 @@
         container.textContent = "No session insights recorded for this player yet.";
         return;
       }
+      const playerCohorts = (pSocial && pSocial.cohorts) || [];
       const buddies = (pSocial && pSocial.buddies) || [];
       const missed = (pSocial && pSocial.missed) || [];
 
+      const cohortsHtml = playerCohorts.length
+        ? playerCohorts.map((c) => {
+            const othersLinks = (c.members || [])
+              .filter((m) => m.uuid !== route.id)
+              .map((m) => `<a class="co-cohort-pill" href="/player/${encodeURIComponent(m.uuid)}/overview">${escapeHtml(m.name)}</a>`)
+              .join("");
+            return `<div class="py-1" style="border-bottom:1px solid rgba(128,128,128,0.14)">
+              <div class="d-flex justify-content-between align-items-baseline gap-2">
+                <strong style="font-size:0.8rem">${escapeHtml(c.title)}</strong>
+                <span class="co-sub-badge">${escapeHtml(c.shared_display)} · ${c.shared_sessions} sess</span>
+              </div>
+              <div class="co-cohort-members my-1"><span class="co-sub-badge me-1">With:</span>${othersLinks}</div>
+              <div class="co-rec-meta">
+                <span>🕒 ${escapeHtml(c.time_window)} (peak ${escapeHtml(c.peak_hour)})</span>
+                <span>📅 ${escapeHtml(c.day_pattern)}</span>
+              </div>
+            </div>`;
+          }).join("")
+        : '<div class="text-muted small">Not part of any multi-session cohort yet.</div>';
+
       const buddiesHtml = buddies.length
-        ? buddies.map((b) => `<div class="co-duo-row"><span><strong>${escapeHtml(b.name)}</strong></span><span>${escapeHtml(b.shared_display)} <span class="co-sub-badge">(${b.overlap_pct}% of playtime)</span></span></div>`).join("")
+        ? buddies.map((b) => `<div class="co-duo-row"><span><a class="co-link" href="/player/${encodeURIComponent(b.uuid)}/overview"><strong>${escapeHtml(b.name)}</strong></a></span><span>${escapeHtml(b.shared_display)} <span class="co-sub-badge">(${b.overlap_pct}% of playtime)</span></span></div>`).join("")
         : '<div class="text-muted small">No co-play overlap recorded yet.</div>';
 
       const missedHtml = missed.length
-        ? missed.map((m) => `<div class="co-duo-row"><span><strong>${escapeHtml(m.name)}</strong></span><span class="co-sub-badge">${m.near_misses ? `${m.near_misses} near-misses (<30m)` : `${m.overlap_pct}% overlap`}</span></div>`).join("")
+        ? missed.map((m) => `<div class="co-duo-row"><span><a class="co-link" href="/player/${encodeURIComponent(m.uuid)}/overview"><strong>${escapeHtml(m.name)}</strong></a></span><span class="co-sub-badge">${m.near_misses ? `${m.near_misses} near-misses (<30m)` : `${m.overlap_pct}% overlap`}</span></div>`).join("")
         : '<div class="text-muted small">No missed connections detected.</div>';
 
       container.innerHTML = `
-        <div class="co-social-grid">
+        <div class="co-player-grid">
           ${pHabit ? renderHabitBox(pHabit, true) : ""}
+          <div class="co-social-box">
+            <div class="co-social-title"><span>👥 Play Cohorts &amp; Groups</span><span class="co-sub-badge">${playerCohorts.length} group${playerCohorts.length === 1 ? "" : "s"}</span></div>
+            ${cohortsHtml}
+          </div>
           <div class="co-social-box">
             <div class="co-social-title"><span>🤝 Top Co-Play Buddies</span><span class="co-sub-badge">${pSocial ? `${pSocial.social_pct}% group / ${pSocial.solo_pct}% solo` : ""}</span></div>
             ${buddiesHtml}
-          </div>
-          <div class="co-social-box">
-            <div class="co-social-title"><span>🚢 Ships in the Night</span></div>
+            <div class="co-social-title mt-3"><span>🚢 Ships in the Night</span></div>
             ${missedHtml}
           </div>
         </div>
       `;
-
-      container.querySelectorAll("[data-habit-box]").forEach((box) => {
-        box.addEventListener("click", (event) => {
-          if (event.target.closest("[data-player-link]")) return;
-          box.classList.toggle("is-open");
-          const hint = box.querySelector("[data-habit-toggle]");
-          if (hint) hint.textContent = box.classList.contains("is-open") ? "Details ▴" : "Time split ▾";
-        });
-      });
     }
   }
 

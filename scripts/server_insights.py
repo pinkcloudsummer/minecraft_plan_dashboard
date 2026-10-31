@@ -768,6 +768,296 @@ def compute_session_habits(series, full_sessions_by_player, names):
     return player_profiles
 
 
+def _detect_cohorts(by_player, total_ms_by_player, pairs, names):
+    """Identifies multi-player cohorts/groups (2+ and 3+ players) who play together and when."""
+    uuids = sorted(by_player.keys())
+    if len(uuids) < 2:
+        return [], {u: [] for u in uuids}
+
+    # Sweep line to collect all time slices with >= 2 players online simultaneously
+    events = []
+    for u, intervals in by_player.items():
+        for s, e in intervals:
+            events.append((s, 1, u))
+            events.append((e, -1, u))
+    events.sort(key=lambda x: (x[0], -x[1]))
+
+    online = set()
+    multi_slices = []  # (start_ms, end_ms, frozenset_of_online_uuids)
+    prev_ts = None
+    for ts, delta, u in events:
+        if prev_ts is not None and ts > prev_ts and len(online) >= 2:
+            multi_slices.append((prev_ts, ts, frozenset(online)))
+        if delta == 1:
+            online.add(u)
+        else:
+            online.discard(u)
+        prev_ts = ts
+
+    if not multi_slices:
+        return [], {u: [] for u in uuids}
+
+    # Build adjacency graph from pairs with meaningful co-play
+    pair_lookup = {}
+    adj = {u: set() for u in uuids}
+    for p in pairs:
+        if p["shared_ms"] <= 0:
+            continue
+        u1, u2 = p["u1"], p["u2"]
+        pair_lookup[(u1, u2)] = p
+        pair_lookup[(u2, u1)] = p
+        if p["overlap_pct"] >= 5.0 or p["shared_ms"] >= 15 * 60 * 1000:
+            adj[u1].add(u2)
+            adj[u2].add(u1)
+
+    # Fallback if all overlaps are tiny: include any positive overlap edge
+    if not any(adj.values()):
+        for (u1, u2), p in pair_lookup.items():
+            adj[u1].add(u2)
+
+    # Bron-Kerbosch to find maximal cliques of size >= 2
+    cliques = set()
+
+    def bron_kerbosch(r, p_set, x_set):
+        if not p_set and not x_set:
+            if len(r) >= 2:
+                cliques.add(frozenset(r))
+            return
+        pivot = next(iter(p_set | x_set))
+        for v in list(p_set - adj[pivot]):
+            bron_kerbosch(r | {v}, p_set & adj[v], x_set & adj[v])
+            p_set.remove(v)
+            x_set.add(v)
+
+    bron_kerbosch(set(), set(uuids), set())
+
+    # Candidate groups: maximal cliques, exact simultaneous online sets (up to size 6), and top pairs
+    candidate_groups = set(cliques)
+    for _, _, oset in multi_slices:
+        if 2 <= len(oset) <= 6:
+            candidate_groups.add(oset)
+    for p in sorted(pairs, key=lambda x: x["shared_ms"], reverse=True)[:10]:
+        if p["shared_ms"] > 0:
+            candidate_groups.add(frozenset([p["u1"], p["u2"]]))
+
+    tod_defs = [
+        ("Late Night", "12a–6a", "🌙", range(0, 6)),
+        ("Morning", "6a–12p", "☀️", range(6, 12)),
+        ("Afternoon", "12p–6p", "🌤️", range(12, 18)),
+        ("Evening", "6p–12a", "🌆", range(18, 24)),
+    ]
+
+    scored_cohorts = []
+    for grp in candidate_groups:
+        size = len(grp)
+        if size < 2:
+            continue
+
+        # Require every pair in the group to have co-played at least once
+        all_pairs_connected = True
+        for i_u in grp:
+            for j_u in grp:
+                if i_u < j_u and (i_u, j_u) not in pair_lookup:
+                    all_pairs_connected = False
+                    break
+            if not all_pairs_connected:
+                break
+        if not all_pairs_connected:
+            continue
+
+        # Collect slices where all members of `grp` are online simultaneously,
+        # and for size >= 3 also track slices where at least 2 members of `grp` are online together
+        exact_intervals = []
+        core_intervals = []
+        member_active_ms = {u: 0 for u in grp}
+        all_together_ms = 0
+        core_together_ms = 0
+
+        for s, e, oset in multi_slices:
+            dt = e - s
+            inter = grp & oset
+            if len(inter) == size:
+                all_together_ms += dt
+                exact_intervals.append((s, e))
+            if len(inter) >= 2:
+                core_together_ms += dt
+                core_intervals.append((s, e))
+                for u in inter:
+                    member_active_ms[u] += dt
+
+        # For 3+ player cohorts, require either real simultaneous overlap or strong participation by every member
+        if size == 2:
+            if all_together_ms <= 0:
+                continue
+            timing_intervals = exact_intervals
+            primary_ms = all_together_ms
+        else:
+            if core_together_ms <= 0:
+                continue
+            min_member_share = min(member_active_ms.values()) / float(core_together_ms)
+            if all_together_ms <= 0 and min_member_share < 0.35:
+                continue
+            if min_member_share < 0.25:
+                continue
+            timing_intervals = exact_intervals if all_together_ms >= 0.4 * core_together_ms else core_intervals
+            primary_ms = all_together_ms if all_together_ms >= 0.4 * core_together_ms else core_together_ms
+
+        # Merge contiguous/nearby timing intervals (within 5 mins) to count distinct group sessions
+        merged_timing = []
+        for s, e in sorted(timing_intervals, key=lambda x: x[0]):
+            if merged_timing and s - merged_timing[-1][1] <= 5 * 60 * 1000:
+                merged_timing[-1] = (merged_timing[-1][0], max(merged_timing[-1][1], e))
+            else:
+                merged_timing.append((s, e))
+
+        by_hour = [0.0] * 24
+        by_dow = [0.0] * 7
+        shared_days = set()
+        for s, e in timing_intervals:
+            cur = s
+            while cur < e:
+                dt = _local_dt(cur)
+                shared_days.add(dt.strftime("%Y-%m-%d"))
+                next_hour = dt.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)
+                seg_end = min(e, int(next_hour.timestamp() * 1000))
+                if seg_end <= cur:
+                    seg_end = min(e, cur + 60000)
+                seg_h = (seg_end - cur) / HOUR_MS
+                by_dow[dt.weekday()] += seg_h
+                by_hour[dt.hour] += seg_h
+                cur = seg_end
+
+        tot_h = sum(by_hour)
+        if tot_h <= 0:
+            continue
+
+        # Determine dominant Time-of-Day block and favorite hour
+        best_tod = max(tod_defs, key=lambda td: sum(by_hour[h] for h in td[3]))
+        tod_name, tod_range, tod_icon, tod_hours = best_tod
+        tod_pct = int(round(100.0 * sum(by_hour[h] for h in tod_hours) / tot_h))
+        fav_h = max(range(24), key=lambda h: by_hour[h])
+        fav_h_label = _format_hour(fav_h)
+
+        # Determine day-of-week signature
+        wkend_h = by_dow[5] + by_dow[6]
+        wkend_pct = int(round(100.0 * wkend_h / tot_h))
+        wkday_pct = 100 - wkend_pct
+        ranked_dows = sorted(range(7), key=lambda d: by_dow[d], reverse=True)
+        top_dow = ranked_dows[0]
+        second_dow = ranked_dows[1]
+        top_dow_pct = int(round(100.0 * by_dow[top_dow] / tot_h))
+
+        if top_dow_pct >= 60:
+            day_tag = f"{WEEKDAY_NAMES[top_dow]}s"
+            day_detail = f"{WEEKDAY_SHORT[top_dow]} ({top_dow_pct}%)"
+        elif wkend_pct >= 62:
+            day_tag = "Weekend"
+            day_detail = f"Weekends ({wkend_pct}%)"
+        elif top_dow_pct >= 45:
+            day_tag = f"{WEEKDAY_NAMES[top_dow]}s"
+            day_detail = f"{WEEKDAY_SHORT[top_dow]} ({top_dow_pct}%)"
+        elif wkday_pct >= 75:
+            if by_dow[second_dow] > 0 and (by_dow[top_dow] + by_dow[second_dow]) / tot_h >= 0.6:
+                day_tag = f"{WEEKDAY_SHORT[top_dow]}/{WEEKDAY_SHORT[second_dow]}"
+                day_detail = f"{WEEKDAY_SHORT[top_dow]} & {WEEKDAY_SHORT[second_dow]}"
+            else:
+                day_tag = "Weekday"
+                day_detail = f"Weekdays ({wkday_pct}%)"
+        else:
+            day_tag = f"{WEEKDAY_SHORT[top_dow]}/{WEEKDAY_SHORT[second_dow]}"
+            day_detail = f"{WEEKDAY_SHORT[top_dow]} & {WEEKDAY_SHORT[second_dow]}"
+
+        group_noun = "Duo" if size == 2 else ("Trio" if size == 3 else ("Quad" if size == 4 else "Crew"))
+        cohort_title = f"{tod_icon} {day_tag} {tod_name} {group_noun}"
+
+        members = sorted(
+            [{"uuid": u, "name": names.get(u, u[:8])} for u in grp],
+            key=lambda m: (-member_active_ms.get(m["uuid"], 0), m["name"].lower()),
+        )
+
+        # Score favors multi-player cohorts (3+) when they have meaningful time, while still ranking strong duos
+        size_bonus = 1.35 if size >= 3 else 1.0
+        score = primary_ms * size_bonus
+
+        scored_cohorts.append({
+            "group_set": grp,
+            "score": score,
+            "primary_ms": primary_ms,
+            "size": size,
+            "title": cohort_title,
+            "icon": tod_icon,
+            "members": members,
+            "member_names": [m["name"] for m in members],
+            "shared_hours": round(primary_ms / HOUR_MS, 2),
+            "shared_display": _format_duration_hm(primary_ms),
+            "all_together_display": _format_duration_hm(all_together_ms) if all_together_ms > 0 else None,
+            "shared_sessions": len(merged_timing),
+            "shared_days": len(shared_days),
+            "time_window": f"{tod_name} ({tod_range})",
+            "time_window_pct": tod_pct,
+            "peak_hour": fav_h_label,
+            "day_pattern": day_detail,
+            "weekend_pct": wkend_pct,
+            "weekday_pct": wkday_pct,
+        })
+
+    # Sort by score descending, then prune redundant subsets/supersets
+    scored_cohorts.sort(key=lambda c: (c["score"], c["size"]), reverse=True)
+    selected = []
+    for cand in scored_cohorts:
+        g = cand["group_set"]
+        redundant = False
+        for existing in selected:
+            eg = existing["group_set"]
+            # If cand is a subset of an already selected larger cohort with similar time, skip cand
+            if g < eg and cand["primary_ms"] <= existing["primary_ms"] * 1.5:
+                redundant = True
+                break
+            # If cand is a superset of an already selected smaller cohort but barely played together as full group
+            if g > eg and cand["primary_ms"] < existing["primary_ms"] * 0.35:
+                redundant = True
+                break
+        if not redundant:
+            selected.append(cand)
+        if len(selected) >= 8:
+            break
+
+    # Clean internal fields and build per-player cohort membership
+    cohorts_out = []
+    per_player_cohorts = {u: [] for u in uuids}
+    for idx, c in enumerate(selected, start=1):
+        cohort_obj = {
+            "id": f"cohort_{idx}",
+            "size": c["size"],
+            "title": c["title"],
+            "icon": c["icon"],
+            "members": c["members"],
+            "member_names": c["member_names"],
+            "shared_hours": c["shared_hours"],
+            "shared_display": c["shared_display"],
+            "all_together_display": c["all_together_display"],
+            "shared_sessions": c["shared_sessions"],
+            "shared_days": c["shared_days"],
+            "time_window": c["time_window"],
+            "time_window_pct": c["time_window_pct"],
+            "peak_hour": c["peak_hour"],
+            "day_pattern": c["day_pattern"],
+            "weekend_pct": c["weekend_pct"],
+            "weekday_pct": c["weekday_pct"],
+        }
+        cohorts_out.append(cohort_obj)
+        for m in c["members"]:
+            u = m["uuid"]
+            if u in per_player_cohorts:
+                others = [om["name"] for om in c["members"] if om["uuid"] != u]
+                per_player_cohorts[u].append({
+                    **cohort_obj,
+                    "other_members": others,
+                })
+
+    return cohorts_out, per_player_cohorts
+
+
 def compute_social_overlap(full_sessions_by_player, names):
     """Computes pairwise co-play time, Jaccard affinity, near-misses (<30m), and solo vs social %."""
     # Filter and normalize sessions per player
@@ -954,13 +1244,17 @@ def compute_social_overlap(full_sessions_by_player, names):
         reverse=True,
     )[:5]
 
+    cohorts, per_player_cohorts = _detect_cohorts(by_player, total_ms_by_player, pairs, names)
+
     return {
+        "cohorts": cohorts,
         "top_duos": top_duos,
         "ships_in_night": ships_in_night,
         "most_near_misses": most_near_misses,
         "solo_vs_social": solo_vs_social,
         "by_player": {
             u: {
+                "cohorts": per_player_cohorts.get(u, [])[:4],
                 "buddies": per_player_buddies[u][:3],
                 "missed": per_player_missed[u][:3],
                 "social_pct": next((x["social_pct"] for x in solo_vs_social if x["uuid"] == u), 0),
