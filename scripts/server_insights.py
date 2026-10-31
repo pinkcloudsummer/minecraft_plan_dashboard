@@ -707,6 +707,38 @@ def compute_session_habits(series, full_sessions_by_player, names):
             if len(top_habits) >= 4:
                 break
 
+        # Compute time-of-day 4-block breakdown (Night 0-5, Morning 6-11, Afternoon 12-17, Evening 18-23)
+        tod_blocks = [
+            ("Late Night (12a–6a)", sum(play_by_hour[0:6])),
+            ("Morning (6a–12p)", sum(play_by_hour[6:12])),
+            ("Afternoon (12p–6p)", sum(play_by_hour[12:18])),
+            ("Evening (6p–12a)", sum(play_by_hour[18:24])),
+        ]
+        tot_tod = sum(v for _, v in tod_blocks)
+        time_of_day_split = [
+            {
+                "label": lbl,
+                "hours": round(val, 1),
+                "pct": int(round(100.0 * val / tot_tod)) if tot_tod > 0 else 0,
+            }
+            for lbl, val in tod_blocks
+        ]
+
+        # Per-activity peak day & peak hour for the expanded drawer
+        for item in activity_mix:
+            c_info = player_cat_series[(uuid, item["key"])]
+            c_dow = c_info["by_dow"]
+            c_hour = c_info["by_hour"]
+            c_sum = sum(c_dow)
+            if c_sum > 0:
+                best_d = max(range(7), key=lambda d: c_dow[d])
+                best_h = max(range(24), key=lambda h: c_hour[h])
+                item["peak_day"] = WEEKDAY_SHORT[best_d]
+                item["peak_day_pct"] = int(round(100.0 * c_dow[best_d] / c_sum))
+                item["peak_hour"] = _format_hour(best_h)
+                item["peak_hour_pct"] = int(round(100.0 * c_hour[best_h] / c_sum))
+                item["weekend_pct"] = int(round(100.0 * (c_dow[5] + c_dow[6]) / c_sum))
+
         avg_sess_ms = (total_play_ms / len(sess_list)) if sess_list else 0
         player_profiles[uuid] = {
             "uuid": uuid,
@@ -725,8 +757,9 @@ def compute_session_habits(series, full_sessions_by_player, names):
             "fav_weekday_short": WEEKDAY_SHORT[fav_dow] if fav_dow is not None else "–",
             "fav_weekday_pct": fav_dow_pct,
             "weekend_pct": weekend_play_pct,
-            "primary_archetype": activity_mix[0]["label"] if activity_mix else "🌱 Newcomer",
-            "activity_mix": activity_mix[:4],
+            "weekday_pct": 100 - weekend_play_pct if total_dow_play > 0 else 0,
+            "time_of_day_split": time_of_day_split,
+            "activity_mix": activity_mix[:5],
             "habits": top_habits,
             "hours_histogram": [round(v, 2) for v in play_by_hour],
             "weekdays_histogram": [round(v, 2) for v in play_by_dow],

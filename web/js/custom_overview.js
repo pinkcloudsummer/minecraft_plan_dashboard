@@ -150,12 +150,19 @@
       #${CARD_ID} .co-rec-toggle { cursor: pointer; user-select: none; font-size: 0.7rem; opacity: 0.65; text-decoration: underline dotted; }
       #${CARD_ID} .co-rec-row { display: flex; justify-content: space-between; gap: 0.35rem; padding: 0.08rem 0; }
       #${CARD_ID} .co-habits-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.65rem; }
-      #${CARD_ID} .co-habit-box { border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 0.45rem; padding: 0.65rem 0.75rem; background: rgba(128, 128, 128, 0.04); }
+      #${CARD_ID} .co-habit-box { border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 0.45rem; padding: 0.65rem 0.75rem; background: rgba(128, 128, 128, 0.04); cursor: pointer; transition: border-color 0.15s ease; }
+      #${CARD_ID} .co-habit-box:hover { border-color: rgba(74, 144, 226, 0.55); }
       #${CARD_ID} .co-habit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; margin-bottom: 0.35rem; }
-      #${CARD_ID} .co-habit-name { font-weight: 700; font-size: 0.92rem; }
-      #${CARD_ID} .co-habit-arch { font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 999px; background: rgba(74, 144, 226, 0.15); font-weight: 600; white-space: nowrap; }
-      #${CARD_ID} .co-pill-list { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.35rem 0; }
-      #${CARD_ID} .co-pill { font-size: 0.72rem; padding: 0.12rem 0.42rem; border-radius: 0.3rem; border: 1px solid rgba(128, 128, 128, 0.28); background: rgba(128, 128, 128, 0.07); }
+      #${CARD_ID} .co-habit-name { font-weight: 700; font-size: 0.92rem; color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(128, 128, 128, 0.7); }
+      #${CARD_ID} .co-habit-name:hover { color: #4a90e2; }
+      #${CARD_ID} .co-habit-expand-hint { font-size: 0.72rem; opacity: 0.65; text-decoration: underline dotted; white-space: nowrap; }
+      #${CARD_ID} .co-habit-details { display: none; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed rgba(128, 128, 128, 0.25); font-size: 0.75rem; cursor: default; }
+      #${CARD_ID} .co-habit-box.is-open .co-habit-details { display: block; }
+      #${CARD_ID} .co-dow-bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.2rem; align-items: end; height: 42px; margin: 0.35rem 0 0.15rem; padding-top: 4px; }
+      #${CARD_ID} .co-dow-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+      #${CARD_ID} .co-dow-fill { width: 100%; max-width: 18px; background: #4a90e2; border-radius: 2px 2px 0 0; min-height: 2px; }
+      #${CARD_ID} .co-dow-lbl { font-size: 0.65rem; opacity: 0.7; margin-top: 2px; }
+      #${CARD_ID} .co-split-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: rgba(128, 128, 128, 0.2); margin: 0.35rem 0 0.25rem; }
       #${CARD_ID} .co-mix-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: rgba(128, 128, 128, 0.2); margin: 0.35rem 0 0.25rem; }
       #${CARD_ID} .co-social-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
       #${CARD_ID} .co-social-box { border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 0.45rem; padding: 0.65rem 0.75rem; background: rgba(128, 128, 128, 0.04); }
@@ -260,32 +267,82 @@
     return `<div class="co-records-grid">${boxes}</div>`;
   }
 
-  function renderHabitBox(p) {
-    const mix = p.activity_mix || [];
-    const mixBar = mix.length
-      ? `<div class="co-mix-bar" title="${escapeHtml(mix.map((m) => `${m.short}: ${m.share_pct}%`).join(" · "))}">
-          ${mix.map((m) => `<div style="width:${Math.max(4, m.share_pct)}%;background:${MIX_COLORS[m.key] || "#4a90e2"}"></div>`).join("")}
-         </div>`
+  const WEEKDAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  function renderHabitBox(p, startExpanded) {
+    const wkdayPct = p.weekday_pct !== undefined ? p.weekday_pct : (100 - (p.weekend_pct || 0));
+    const wkendPct = p.weekend_pct || 0;
+    const splitBar = `<div class="co-split-bar" title="Weekdays: ${wkdayPct}% · Weekends: ${wkendPct}%">
+      <div style="width:${wkdayPct}%;background:#4a90e2"></div>
+      <div style="width:${wkendPct}%;background:#50b46b"></div>
+    </div>`;
+
+    // Expanded section: Day-of-week mini bars, Time-of-day blocks, and Activity timing breakdown
+    const dowHist = p.weekdays_histogram || [0, 0, 0, 0, 0, 0, 0];
+    const maxDow = Math.max(0.01, ...dowHist);
+    const dowBarsHtml = `<div class="co-dow-bars">
+      ${dowHist.map((val, i) => {
+        const hPct = Math.round((val / maxDow) * 100);
+        const color = i >= 5 ? "#50b46b" : "#4a90e2";
+        return `<div class="co-dow-col" title="${WEEKDAY_SHORT[i]}: ${val}h">
+          <div class="co-dow-fill" style="height:${Math.max(6, hPct)}%;background:${color}"></div>
+          <span class="co-dow-lbl">${WEEKDAY_SHORT[i][0]}</span>
+        </div>`;
+      }).join("")}
+    </div>`;
+
+    const todList = (p.time_of_day_split || []).filter((t) => t.pct > 0);
+    const todHtml = todList.length
+      ? `<div class="mt-2">
+          <div class="fw-semibold opacity-75 mb-1">Time of Day Split</div>
+          ${todList.map((t) => `<div class="co-rec-row"><span>${escapeHtml(t.label)}</span><strong>${t.pct}% <span class="text-muted fw-normal">(${t.hours}h)</span></strong></div>`).join("")}
+        </div>`
       : "";
-    const mixLegend = mix.slice(0, 3).map((m) => `<span class="co-sub-badge"><i style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${MIX_COLORS[m.key] || "#4a90e2"};margin-right:3px"></i>${escapeHtml(m.short)} ${m.share_pct}%</span>`).join(" · ");
 
-    const habits = (p.habits || []).map((h) => `<span class="co-pill" title="${escapeHtml(h.text)}">${h.icon} ${escapeHtml(h.title)}</span>`).join("");
+    const mix = p.activity_mix || [];
+    const mixHtml = mix.length
+      ? `<div class="mt-2">
+          <div class="fw-semibold opacity-75 mb-1">Session Activity &amp; When It Happens</div>
+          ${mix.map((m) => {
+            const timing = m.peak_day && m.peak_hour
+              ? ` · most on ${escapeHtml(m.peak_day)} (${m.peak_day_pct}%) @ ${escapeHtml(m.peak_hour)}`
+              : "";
+            return `<div class="co-rec-row">
+              <span><i style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${MIX_COLORS[m.key] || "#4a90e2"};margin-right:4px"></i>${escapeHtml(m.short)}${timing}</span>
+              <strong>${m.share_pct}%</strong>
+            </div>`;
+          }).join("")}
+        </div>`
+      : "";
 
-    return `<div class="co-habit-box">
+    const playerUrl = `/player/${encodeURIComponent(p.uuid)}/overview`;
+
+    return `<div class="co-habit-box${startExpanded ? " is-open" : ""}" data-habit-box>
       <div class="co-habit-head">
-        <span class="co-habit-name">${escapeHtml(p.name)}</span>
-        <span class="co-habit-arch">${escapeHtml(p.primary_archetype || "Explorer")}</span>
+        <a class="co-habit-name" href="${playerUrl}" data-player-link title="Open player overview page">${escapeHtml(p.name)}</a>
+        <span class="co-habit-expand-hint" data-habit-toggle>${startExpanded ? "Details ▴" : "Time split ▾"}</span>
       </div>
       <div class="co-rec-meta">
-        <span>🕒 Peak: <strong>${escapeHtml(p.fav_hour_label)}</strong> (${p.fav_hour_pct}%)</span>
-        <span>📅 Fav: <strong>${escapeHtml(p.fav_weekday_short)}</strong> · Wknd ${p.weekend_pct}%</span>
+        <span>🕒 Fav time: <strong>${escapeHtml(p.fav_hour_label)}</strong> (${p.fav_hour_pct}%)</span>
+        <span>📅 Fav day: <strong>${escapeHtml(p.fav_weekday_short)}</strong> (${p.fav_weekday_pct}%)</span>
       </div>
-      ${mixBar}
-      <div class="mb-1">${mixLegend || '<span class="co-sub-badge">Gathering baseline stats…</span>'}</div>
-      ${habits ? `<div class="co-pill-list">${habits}</div>` : ""}
+      ${splitBar}
+      <div class="co-rec-meta">
+        <span><i style="display:inline-block;width:7px;height:7px;border-radius:2px;background:#4a90e2;margin-right:3px"></i>Wkday ${wkdayPct}% · <i style="display:inline-block;width:7px;height:7px;border-radius:2px;background:#50b46b;margin-right:3px"></i>Wknd ${wkendPct}%</span>
+        <span>${p.total_hours}h (${p.session_count} sess)</span>
+      </div>
       <div class="co-rec-meta mt-1">
-        <span>${p.session_count} sess · avg ${p.avg_session_mins}m</span>
-        <span>max ${escapeHtml(p.longest_session_display || "0m")}${p.tiny_sessions ? ` · ${p.tiny_sessions} tiny` : ""}</span>
+        <span>avg ${p.avg_session_mins}m · max ${escapeHtml(p.longest_session_display || "0m")}</span>
+        <span>${p.active_days || 0} active d${p.tiny_sessions ? ` · ${p.tiny_sessions} tiny` : ""}</span>
+      </div>
+      <div class="co-habit-details" data-habit-details>
+        <div class="fw-semibold opacity-75">Day of Week Distribution</div>
+        ${dowBarsHtml}
+        ${todHtml}
+        ${mixHtml}
+        <div class="mt-2 pt-1 text-end">
+          <a class="co-link small fw-semibold" href="${playerUrl}" data-player-link>Open Player Overview →</a>
+        </div>
       </div>
     </div>`;
   }
@@ -296,7 +353,7 @@
     if (!list.length) {
       return '<span class="text-muted">No session habit profiles available yet.</span>';
     }
-    return `<div class="co-habits-grid">${list.map(renderHabitBox).join("")}</div>`;
+    return `<div class="co-habits-grid">${list.map((p) => renderHabitBox(p, false)).join("")}</div>`;
   }
 
   function renderServerSocialSection(social) {
@@ -365,8 +422,8 @@
           ${renderServerRecordsSection(insights.records)}
         </div>
         <div class="co-tab-pane mt-3" data-co-pane="habits">
-          <h6 class="mb-2" style="font-size:0.9rem;font-weight:700">🕒 Player Session Archetypes &amp; Day/Time Habits</h6>
-          <div class="small text-muted mb-2">How players split their sessions by activity, weekday vs. weekend, and favorite hour of the day.</div>
+          <h6 class="mb-2" style="font-size:0.9rem;font-weight:700">🕒 Player Session &amp; Time Split</h6>
+          <div class="small text-muted mb-2">Weekday vs. weekend and favorite hour of the day. Click a card to expand full day/time and session activity breakdowns, or click a player's name to open their page.</div>
           ${renderServerHabitsSection(insights.habits)}
         </div>
         <div class="co-tab-pane mt-3" data-co-pane="social">
@@ -380,6 +437,16 @@
         btn.addEventListener("click", () => {
           const box = btn.closest(".co-record-box");
           if (box) box.classList.toggle("is-open");
+        });
+      });
+
+      // Bind expandable player habit cards
+      container.querySelectorAll("[data-habit-box]").forEach((box) => {
+        box.addEventListener("click", (event) => {
+          if (event.target.closest("[data-player-link]")) return;
+          box.classList.toggle("is-open");
+          const hint = box.querySelector("[data-habit-toggle]");
+          if (hint) hint.textContent = box.classList.contains("is-open") ? "Details ▴" : "Time split ▾";
         });
       });
 
@@ -420,7 +487,7 @@
 
       container.innerHTML = `
         <div class="co-social-grid">
-          ${pHabit ? renderHabitBox(pHabit) : ""}
+          ${pHabit ? renderHabitBox(pHabit, true) : ""}
           <div class="co-social-box">
             <div class="co-social-title"><span>🤝 Top Co-Play Buddies</span><span class="co-sub-badge">${pSocial ? `${pSocial.social_pct}% group / ${pSocial.solo_pct}% solo` : ""}</span></div>
             ${buddiesHtml}
@@ -431,6 +498,15 @@
           </div>
         </div>
       `;
+
+      container.querySelectorAll("[data-habit-box]").forEach((box) => {
+        box.addEventListener("click", (event) => {
+          if (event.target.closest("[data-player-link]")) return;
+          box.classList.toggle("is-open");
+          const hint = box.querySelector("[data-habit-toggle]");
+          if (hint) hint.textContent = box.classList.contains("is-open") ? "Details ▴" : "Time split ▾";
+        });
+      });
     }
   }
 
